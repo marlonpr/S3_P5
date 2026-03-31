@@ -1,0 +1,26 @@
+dependencies:
+  hub75:
+    component_hash: eaa35599c362d7847e2fd38c5d49849fe73f3c5db501bb826849a425fde5960b
+    dependencies:
+    - name: idf
+      version: '>=4.4.0'
+    source:
+      git: https://github.com/stuartparmenter/esp-hub75
+      path: components/hub75
+      type: git
+    targets:
+    - esp32
+    - esp32s2
+    - esp32s3
+    - esp32c6
+    - esp32p4
+    version: dccb53ac308b328aed7506848ec1550e5b38118d
+  idf:
+    source:
+      type: idf
+    version: 6.0.0
+direct_dependencies:
+- hub75
+manifest_hash: 1dd6ca5a0bcc6e8bcc5e64770b55843d9a5b9cf6a191efdbe15afa7ecbbe42c0
+target: esp32s3
+version: 3.0.0
