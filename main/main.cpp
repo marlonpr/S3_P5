@@ -2,34 +2,41 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_panel.h"
+#include "frame_pacer.h"
 
 static led_panel_t* g_panel;
 
 
 static void render_task(void *arg)
 {
-	marquee_t mq = {
-	    .text = "HELLO WORLD   ",
-	    .scroll_x = 0.0f,
-	    .velocity = 0.22f   // ⭐ SPEED CONTROL
-	};
-	
-	led_panel_begin_frame(g_panel);
+    marquee_t mq = {
+        .text = "HELLO WORLD   ",
+        .scroll_x = 0.0f,
+        .velocity = 0.35f   // pixels per frame @60Hz
+    };
 
-	led_panel_set_pixel(g_panel, 10, 10, 255, 0, 0); // FORCE RED PIXEL
+    frame_pacer_t pacer;
+    frame_pacer_init(&pacer, 60.0f);   // ⭐ HARD LOCK 60 FPS
 
-	led_panel_end_frame(g_panel);
+    while(true)
+    {
+        //------------------------------------------------
+        // VSYNC LOCK (precise frame boundary)
+        //------------------------------------------------
+        frame_pacer_wait(&pacer);
 
-	while(true)
-	{
-	    led_panel_begin_frame(g_panel);
+        //------------------------------------------------
+        // BEGIN FRAME
+        //------------------------------------------------
+        led_panel_begin_frame(g_panel);
 
-	    marquee_tick(g_panel,&mq);		
+        marquee_tick(g_panel, &mq);
 
-	    led_panel_end_frame(g_panel);
-
-	    vTaskDelay(pdMS_TO_TICKS(32)); // 60 FPS
-	}
+        //------------------------------------------------
+        // PRESENT (acts like VSYNC swap)
+        //------------------------------------------------
+        led_panel_end_frame(g_panel);
+    }
 }
 
 void App::run()
