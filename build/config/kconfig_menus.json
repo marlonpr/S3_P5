@@ -35917,7 +35917,7 @@
                         ],
                         "depends_on": null,
                         "help": "Select a board preset to auto-configure pin mappings.\n\nBoard presets configure all HUB75 pins (R1/G1/B1/R2/G2/B2,\nA/B/C/D/E, LAT/OE/CLK) for popular ESP32-S3 HUB75 controller boards.\n\nChoose \"Custom\" to manually configure all pins for your specific\nhardware layout.",
-                        "id": "component-config-hub75-rgb-led-matrix-driver-board-preset-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-10",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-board-preset-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-10",
                         "name": "HUB75_BOARD_PRESET",
                         "title": "Board Preset",
                         "type": "choice"
@@ -36015,7 +36015,7 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Internal panel shift register wiring pattern.\n\nSTANDARD works for 95% of panels. If your display shows\nscrambled/garbled output with correct pins, try one of the\n1/4 or 1/8 scan variants.\n\nThese patterns are for panels with non-standard internal\nwiring where shift registers are arranged differently. The\ndriver automatically adjusts DMA buffer dimensions and\ncoordinate remapping for these panels.",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-scan-wiring-pattern-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-124",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-scan-wiring-pattern-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-124",
                                 "name": "HUB75_SCAN_WIRING",
                                 "title": "Scan Wiring Pattern",
                                 "type": "choice"
@@ -36075,7 +36075,7 @@
                                 ],
                                 "depends_on": null,
                                 "help": "LED driver chip type (requires special initialization sequence).\n\nTry GENERIC first. If panel doesn't light up or shows incorrect\ncolors, try FM6126A (most common in modern panels).\n\nMBI5124 requires inverted clock phase (set automatically).",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-shift-driver-ic-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-183",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-shift-driver-ic-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-183",
                                 "name": "HUB75_SHIFT_DRIVER",
                                 "title": "Shift Driver IC",
                                 "type": "choice"
@@ -36175,7 +36175,7 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Color bit depth per channel (R/G/B).\n\nHigher bit depth = better color gradients but slower refresh rate.\nChanges require full rebuild to regenerate LUT.\n\n  - 4-bit: 16 levels/channel (maximum refresh, limited colors)\n  - 5-bit: 32 levels/channel\n  - 6-bit: 64 levels/channel (fast refresh)\n  - 7-bit: 128 levels/channel\n  - 8-bit: 256 levels/channel (good balance)\n  - 9-bit: 512 levels/channel\n  - 10-bit: 1024 levels/channel (recommended)\n  - 11-bit: 2048 levels/channel\n  - 12-bit: 4096 levels/channel (best quality)\n\nDriver auto-adjusts BCM timing to maintain target refresh rate.",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-bit-depth-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-216",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-bit-depth-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-216",
                                 "name": "HUB75_BIT_DEPTH_CHOICE",
                                 "title": "Bit Depth",
                                 "type": "choice"
@@ -36365,7 +36365,7 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Pixel clock frequency for shifting data to panels.\n\nHigher speeds = faster refresh, but may cause signal integrity\nissues on long cables or with some panels.\n\nPlatform limits (falls back with warning if exceeded):\n  - ESP32: 10 MHz max\n  - ESP32-S2: 20 MHz max\n  - ESP32-S3/P4/C6: 32 MHz",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-output-clock-speed-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-314",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-output-clock-speed-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-314",
                                 "name": "HUB75_CLOCK_SPEED",
                                 "title": "Output Clock Speed",
                                 "type": "choice"
@@ -36441,14 +36441,14 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Display rotation angle (clockwise).\n\nFor 90\u00b0 and 270\u00b0 rotations, get_width() and get_height()\nreturn swapped values compared to physical panel dimensions.\n\nCan be changed at runtime via driver.set_rotation().",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-display-rotation-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-379",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-display-rotation-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-379",
                                 "name": "HUB75_ROTATION",
                                 "title": "Display Rotation",
                                 "type": "choice"
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-93",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-panel-settings-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-93",
                         "title": "Panel Settings",
                         "type": "menu"
                     },
@@ -36575,14 +36575,14 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Panel chaining pattern and wiring orientation.\n\n- HORIZONTAL: Single row, all panels upright (simplest)\n- Serpentine: Alternate rows mounted upside down (saves cable length)\n- Zigzag: All panels upright, cables snake back (longer cables)\n\nSerpentine layouts require layout_rows > 1.\nZigzag layouts require layout_rows > 1 AND layout_cols > 1.",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-multi-panel-layout-layout-type-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-435",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-multi-panel-layout-layout-type-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-435",
                                 "name": "HUB75_LAYOUT_TYPE",
                                 "title": "Layout Type",
                                 "type": "choice"
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-multi-panel-layout-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-409",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-multi-panel-layout-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-409",
                         "title": "Multi-Panel Layout",
                         "type": "menu"
                     },
@@ -36772,7 +36772,7 @@
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-pin-configuration-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-514",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-pin-configuration-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-514",
                         "title": "Pin Configuration",
                         "type": "menu"
                     },
@@ -36793,7 +36793,7 @@
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-timing-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-661",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-timing-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-661",
                         "title": "Timing",
                         "type": "menu"
                     },
@@ -36841,7 +36841,7 @@
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-features-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-683",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-features-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-683",
                         "title": "Features",
                         "type": "menu"
                     },
@@ -36882,7 +36882,7 @@
                                 ],
                                 "depends_on": null,
                                 "help": "Gamma correction mode for color output.\nChanges require full rebuild to regenerate LUT.\n\n- Linear: No gamma correction (1:1 mapping)\n- CIE1931: Standard perceptual lightness curve (recommended)\n- Gamma 2.2: Standard gamma 2.2 correction\n\nCIE1931 provides better visual color gradients by matching\nhuman perception of brightness. Linear provides direct\nhardware mapping but may appear less smooth.",
-                                "id": "component-config-hub75-rgb-led-matrix-driver-color-gamma-correction-mode-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-735",
+                                "id": "component-config-hub75-rgb-led-matrix-driver-color-gamma-correction-mode-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-735",
                                 "name": "HUB75_GAMMA_CHOICE",
                                 "title": "Gamma Correction Mode",
                                 "type": "choice"
@@ -36929,7 +36929,7 @@
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-color-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-733",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-color-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-733",
                         "title": "Color",
                         "type": "menu"
                     },
@@ -36958,13 +36958,13 @@
                             }
                         ],
                         "depends_on": null,
-                        "id": "component-config-hub75-rgb-led-matrix-driver-debug-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-783",
+                        "id": "component-config-hub75-rgb-led-matrix-driver-debug-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-783",
                         "title": "Debug",
                         "type": "menu"
                     }
                 ],
                 "depends_on": null,
-                "id": "component-config-hub75-rgb-led-matrix-driver-C:-Users-Marlon-workspace-S3_P5-managed_components-hub75-Kconfig-4",
+                "id": "component-config-hub75-rgb-led-matrix-driver-C:-Users-Marlon-workspace-S3_P5-components-hub75-Kconfig-4",
                 "title": "HUB75 RGB LED Matrix Driver",
                 "type": "menu"
             },

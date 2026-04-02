@@ -1894,14 +1894,11 @@ CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 #
 # ESP System Settings
 #
-# default:
 # CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80 is not set
+# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160 is not set
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # default:
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
-# default:
-# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240 is not set
-# default:
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=160
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 
 #
 # Cache config
@@ -3605,6 +3602,213 @@ CONFIG_WL_SECTOR_SIZE_4096=y
 # default:
 CONFIG_WL_SECTOR_SIZE=4096
 # end of Wear Levelling
+
+#
+# HUB75 RGB LED Matrix Driver
+#
+# default:
+# CONFIG_HUB75_BOARD_CUSTOM is not set
+# default:
+CONFIG_HUB75_BOARD_GENERIC_S3=y
+# default:
+# CONFIG_HUB75_BOARD_ADAFRUIT_MATRIX_PORTAL_S3 is not set
+# default:
+# CONFIG_HUB75_BOARD_APOLLO_M1_REV4 is not set
+# default:
+# CONFIG_HUB75_BOARD_APOLLO_M1_REV6 is not set
+# default:
+# CONFIG_HUB75_BOARD_HUIDU_HD_WF2 is not set
+
+#
+# Panel Settings
+#
+# default:
+CONFIG_HUB75_PANEL_WIDTH=64
+# default:
+CONFIG_HUB75_PANEL_HEIGHT=64
+# default:
+CONFIG_HUB75_WIRING_STANDARD=y
+# default:
+# CONFIG_HUB75_WIRING_SCAN_1_4_16PX is not set
+# default:
+# CONFIG_HUB75_WIRING_SCAN_1_8_32PX is not set
+# default:
+# CONFIG_HUB75_WIRING_SCAN_1_8_32PX_FULL is not set
+# default:
+# CONFIG_HUB75_WIRING_SCAN_1_8_40PX is not set
+# default:
+# CONFIG_HUB75_WIRING_SCAN_1_8_64PX is not set
+# default:
+CONFIG_HUB75_DRIVER_GENERIC=y
+# default:
+# CONFIG_HUB75_DRIVER_FM6126A is not set
+# default:
+# CONFIG_HUB75_DRIVER_FM6124 is not set
+# default:
+# CONFIG_HUB75_DRIVER_MBI5124 is not set
+# default:
+# CONFIG_HUB75_DRIVER_DP3246 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_4 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_5 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_6 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_7 is not set
+# default:
+CONFIG_HUB75_BIT_DEPTH_8=y
+# default:
+# CONFIG_HUB75_BIT_DEPTH_9 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_10 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_11 is not set
+# default:
+# CONFIG_HUB75_BIT_DEPTH_12 is not set
+# default:
+CONFIG_HUB75_BIT_DEPTH=8
+# default:
+# CONFIG_HUB75_CLK_8MHZ is not set
+# default:
+# CONFIG_HUB75_CLK_10MHZ is not set
+# default:
+# CONFIG_HUB75_CLK_16MHZ is not set
+# default:
+# CONFIG_HUB75_CLK_18MHZ is not set
+# default:
+CONFIG_HUB75_CLK_20MHZ=y
+# default:
+# CONFIG_HUB75_CLK_23MHZ is not set
+# default:
+# CONFIG_HUB75_CLK_27MHZ is not set
+# default:
+# CONFIG_HUB75_CLK_32MHZ is not set
+# default:
+CONFIG_HUB75_MIN_REFRESH_RATE=60
+# default:
+CONFIG_HUB75_BRIGHTNESS=128
+# default:
+CONFIG_HUB75_ROTATE_0=y
+# default:
+# CONFIG_HUB75_ROTATE_90 is not set
+# default:
+# CONFIG_HUB75_ROTATE_180 is not set
+# default:
+# CONFIG_HUB75_ROTATE_270 is not set
+# end of Panel Settings
+
+#
+# Multi-Panel Layout
+#
+# default:
+CONFIG_HUB75_LAYOUT_ROWS=1
+# default:
+CONFIG_HUB75_LAYOUT_COLS=1
+# default:
+CONFIG_HUB75_LAYOUT_HORIZONTAL=y
+# default:
+# CONFIG_HUB75_LAYOUT_TOP_LEFT_DOWN is not set
+# default:
+# CONFIG_HUB75_LAYOUT_TOP_RIGHT_DOWN is not set
+# default:
+# CONFIG_HUB75_LAYOUT_BOTTOM_LEFT_UP is not set
+# default:
+# CONFIG_HUB75_LAYOUT_BOTTOM_RIGHT_UP is not set
+# default:
+# CONFIG_HUB75_LAYOUT_TOP_LEFT_DOWN_ZIGZAG is not set
+# default:
+# CONFIG_HUB75_LAYOUT_TOP_RIGHT_DOWN_ZIGZAG is not set
+# default:
+# CONFIG_HUB75_LAYOUT_BOTTOM_LEFT_UP_ZIGZAG is not set
+# default:
+# CONFIG_HUB75_LAYOUT_BOTTOM_RIGHT_UP_ZIGZAG is not set
+# end of Multi-Panel Layout
+
+#
+# Data Pins (Upper Half)
+#
+# default:
+CONFIG_HUB75_PIN_R1=42
+# default:
+CONFIG_HUB75_PIN_G1=41
+# default:
+CONFIG_HUB75_PIN_B1=40
+
+#
+# Data Pins (Lower Half)
+#
+# default:
+CONFIG_HUB75_PIN_R2=38
+# default:
+CONFIG_HUB75_PIN_G2=39
+# default:
+CONFIG_HUB75_PIN_B2=37
+
+#
+# Address Lines
+#
+# default:
+CONFIG_HUB75_PIN_A=45
+# default:
+CONFIG_HUB75_PIN_B=36
+# default:
+CONFIG_HUB75_PIN_C=48
+# default:
+CONFIG_HUB75_PIN_D=35
+# default:
+CONFIG_HUB75_PIN_E=21
+
+#
+# Control Signals
+#
+# default:
+CONFIG_HUB75_PIN_LAT=47
+# default:
+CONFIG_HUB75_PIN_OE=14
+# default:
+CONFIG_HUB75_PIN_CLK=2
+
+#
+# Timing
+#
+# default:
+CONFIG_HUB75_LATCH_BLANKING=1
+# end of Timing
+
+#
+# Features
+#
+# default:
+# CONFIG_HUB75_DOUBLE_BUFFER is not set
+# default:
+# CONFIG_HUB75_TEMPORAL_DITHER is not set
+# default:
+# CONFIG_HUB75_CLK_PHASE_INVERTED is not set
+# default:
+CONFIG_HUB75_IRAM_OPTIMIZATION=y
+# end of Features
+
+#
+# Color
+#
+# default:
+# CONFIG_HUB75_GAMMA_LINEAR is not set
+# default:
+CONFIG_HUB75_GAMMA_CIE1931=y
+# default:
+# CONFIG_HUB75_GAMMA_2_2 is not set
+# default:
+CONFIG_HUB75_GAMMA_MODE=1
+# end of Color
+
+#
+# Debug
+#
+# default:
+# CONFIG_HUB75_DEBUG_TIMING is not set
+# end of Debug
+# end of HUB75 RGB LED Matrix Driver
 # end of Component config
 
 # default:
@@ -3715,9 +3919,9 @@ CONFIG_CONSOLE_UART=y
 CONFIG_CONSOLE_UART_NUM=0
 CONFIG_CONSOLE_UART_BAUDRATE=115200
 # CONFIG_ESP32S3_DEFAULT_CPU_FREQ_80 is not set
-CONFIG_ESP32S3_DEFAULT_CPU_FREQ_160=y
-# CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240 is not set
-CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=160
+# CONFIG_ESP32S3_DEFAULT_CPU_FREQ_160 is not set
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=240
 CONFIG_ESP_SYSTEM_PMP_IDRAM_SPLIT=y
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_VIA_TEE=y
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y

@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/Marlon/workspace/S3_P5/managed_components/hub75
+# Install script for directory: C:/Users/Marlon/workspace/S3_P5/components/hub75
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

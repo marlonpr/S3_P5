@@ -1,4 +1,0 @@
-dependencies:
-  hub75:
-    git: https://github.com/stuartparmenter/esp-hub75
-    path: components/hub75  # Important: point to subdirectory!
