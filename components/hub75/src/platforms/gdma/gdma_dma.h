@@ -30,7 +30,7 @@ class GdmaDma : public PlatformDma {
  public:
   GdmaDma(const Hub75Config &config);
   ~GdmaDma();
-
+  
   /**
    * @brief Initialize LCD_CAM peripheral with GDMA
    */
@@ -97,6 +97,24 @@ class GdmaDma : public PlatformDma {
   void flip_buffer() override;
 
   // ============================================================================
+  // Advanced Rendering Access (PlatformDma overrides)
+  // ============================================================================
+
+
+  RowBitPlaneBuffer* get_back_buffer() override;
+
+  uint8_t bit_depth() const override { return bit_depth_; }
+
+  uint16_t dma_width() const override { return dma_width_; }
+
+  uint16_t num_rows() const override { return num_rows_; }
+  
+  
+  
+  
+  
+
+  // ============================================================================
   // Static Helper Functions (Public for compile-time validation)
   // ============================================================================
 
@@ -105,11 +123,14 @@ class GdmaDma : public PlatformDma {
    */
   static constexpr int calculate_bcm_transmissions(int bit_depth, int lsb_msb_transition);
 
-  // Per-row buffer structure (holds all bit planes for one row)
-  struct RowBitPlaneBuffer {
-    uint8_t *data;       // Contiguous buffer: [bit0 pixels][bit1 pixels]...[bitN pixels]
-    size_t buffer_size;  // Total size in bytes
-  };
+/*
+// Per-row buffer structure (holds all bit planes for one row)
+struct RowBitPlaneBuffer {
+  uint8_t *data;       // Contiguous buffer: [bit0 pixels][bit1 pixels]...[bitN pixels]
+  size_t buffer_size;  // Total size in bytes
+};
+*/ 
+
 
  private:
   void configure_lcd_clock();

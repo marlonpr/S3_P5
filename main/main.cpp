@@ -11,44 +11,62 @@
 
 static const char* TAG = "STATS";
 
-/*
+
 void log_system_stats()
 {
-    static uint32_t last_time = 0;
-    static int frames = 0;
+    static uint64_t last_time    = 0;
+    static int      frames       = 0;
+    static uint32_t last_idle[2] = {0, 0};
 
     frames++;
 
-    uint32_t now = esp_timer_get_time() / 1000; // ms
+    uint64_t now = esp_timer_get_time(); // µs
+    if (now - last_time < 1000000ULL) return;
 
-    if(now - last_time >= 1000)
-    {
-        TaskStatus_t tasks[10];
-        uint32_t total_runtime;
+    TaskStatus_t tasks[16];
+    uint32_t total_runtime;
+    int n = uxTaskGetSystemState(tasks, 16, &total_runtime);
 
-        int n = uxTaskGetSystemState(
-            tasks, 10, &total_runtime);
+    uint32_t idle_runtime[2] = {0, 0};
 
-        uint32_t idle_runtime = 0;
+    for (int i = 0; i < n; i++) {
+        ESP_LOGI(TAG, "  %-16s runtime=%lu",
+                 tasks[i].pcTaskName,
+                 tasks[i].ulRunTimeCounter);
 
-        for(int i=0;i<n;i++)
-            if(strstr(tasks[i].pcTaskName,"IDLE"))
-                idle_runtime += tasks[i].ulRunTimeCounter;
-
-        float idle_pct =
-            100.0f * idle_runtime / total_runtime;
-
-        ESP_LOGI(TAG,
-            "FPS=%d  CPU=%.1f%%  IDLE=%.1f%%",
-            frames,
-            100.0f - idle_pct,
-            idle_pct);
-
-        frames = 0;
-        last_time = now;
+        if (strstr(tasks[i].pcTaskName, "IDLE0"))
+            idle_runtime[0] += tasks[i].ulRunTimeCounter;
+        else if (strstr(tasks[i].pcTaskName, "IDLE1"))
+            idle_runtime[1] += tasks[i].ulRunTimeCounter;
     }
+
+    uint32_t delta_idle[2] = {
+        idle_runtime[0] - last_idle[0],
+        idle_runtime[1] - last_idle[1],
+    };
+
+    last_idle[0] = idle_runtime[0];
+    last_idle[1] = idle_runtime[1];
+
+    if (last_time == 0) {
+        last_time = now;
+        frames    = 0;
+        return;
+    }
+
+    uint64_t elapsed_us = now - last_time;
+
+    float cpu0 = 100.0f - (100.0f * delta_idle[0] / elapsed_us);
+    float cpu1 = 100.0f - (100.0f * delta_idle[1] / elapsed_us);
+    float total_cpu = (cpu0 + cpu1) / 2.0f;
+
+    ESP_LOGI(TAG, "FPS=%d  CPU0=%.1f%%  CPU1=%.1f%%  TOTAL=%.1f%%",
+             frames, cpu0, cpu1, total_cpu);
+
+    frames    = 0;
+    last_time = now;
 }
-*/
+
 
 static Hub75Config make_config()
 {
@@ -148,7 +166,7 @@ void App::run()
 	        // 3. atomic swap
 	        matrix->flip_buffer();
 			
-			//log_system_stats();   // ← ADD THIS
+			log_system_stats();   // ← ADD THIS
 
 	        // ~60 FPS
 	        vTaskDelay(pdMS_TO_TICKS(16));
@@ -163,6 +181,31 @@ extern "C" void app_main(void)
 	// VERY IMPORTANT:
 	vTaskDelete(nullptr);   // delete main_task cleanly    
 }
+
+
+
+
+
+
+
+
+/*
+// Same apparent speed at any FPS:
+// velocity = desired_px_per_second / fps
+
+// 30 FPS — slower rendering, less CPU
+frame_pacer_init(&pacer, 30.0f);
+velocity = 0.44f;   // still 13 px/sec (0.44 × 30)
+
+// 60 FPS — default, smooth subpixel blending
+frame_pacer_init(&pacer, 60.0f);
+velocity = 0.22f;   // 13 px/sec (0.22 × 60)
+
+// 120 FPS — ultra smooth, but ESP32 DMA may struggle
+frame_pacer_init(&pacer, 120.0f);
+velocity = 0.11f;   // still 13 px/sec (0.11 × 120)
+*/
+
 
 
 

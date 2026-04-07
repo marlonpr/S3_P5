@@ -272,6 +272,33 @@ class PlatformDma {
   virtual void flip_buffer() {
     // Default: no-op (single buffer mode or not implemented)
   }
+  
+  // ============================================================================
+  // DMA Buffer Access (Advanced / Direct Rendering)
+  // ============================================================================
+
+  /**
+   * @brief Get pointer to back buffer row bitplanes
+   *
+   * Returns platform-owned DMA memory used for rendering.
+   * Valid only for platforms supporting direct DMA writes.
+   */
+  virtual RowBitPlaneBuffer* get_back_buffer() = 0;
+
+  /**
+   * @brief Bit depth used by DMA engine
+   */
+  virtual uint8_t bit_depth() const = 0;
+
+  /**
+   * @brief Width of DMA row in pixels (physical DMA stride)
+   */
+  virtual uint16_t dma_width() const = 0;
+
+  /**
+   * @brief Number of row pairs (panel_height / scan_factor)
+   */
+  virtual uint16_t num_rows() const = 0;
 };
 
 }  // namespace hub75

@@ -7,6 +7,7 @@
 // Uses direct LCD_CAM register access and manual GDMA setup.
 // Simplified ring buffer approach with software BCM state tracking.
 
+#include "hub75.h"
 #include <sdkconfig.h>
 #include <esp_idf_version.h>
 
@@ -110,6 +111,16 @@ GdmaDma::GdmaDma(const Hub75Config &config)
 }
 
 GdmaDma::~GdmaDma() { GdmaDma::shutdown(); }
+
+// ============================================================================
+// PlatformDma Interface Overrides
+// ============================================================================
+
+RowBitPlaneBuffer*
+GdmaDma::get_back_buffer()
+{
+    return row_buffers_[active_idx_];
+}
 
 bool GdmaDma::init() {
   ESP_LOGI(TAG, "Initializing LCD_CAM peripheral with GDMA...");

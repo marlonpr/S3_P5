@@ -57,6 +57,29 @@ Hub75Driver::Hub75Driver(const Hub75Config &config) : config_(config), running_(
 
 Hub75Driver::~Hub75Driver() { end(); }
 
+
+
+RowBitPlaneBuffer* Hub75Driver::get_back_buffer() {
+    if (!dma_) return nullptr;
+    return dma_->get_back_buffer();
+}
+
+uint8_t Hub75Driver::bit_depth() const {
+  if (!dma_) {
+    return 0;
+  }
+  return dma_->bit_depth();
+}
+
+
+uint16_t Hub75Driver::dma_width() const {
+  if (!dma_) {
+    return 0;
+  }
+  return dma_->dma_width();
+}
+
+
 // ============================================================================
 // Initialization
 // ============================================================================
