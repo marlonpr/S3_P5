@@ -220,6 +220,9 @@ class Hub75Driver {
   uint8_t bit_depth() const;
   uint16_t dma_width() const;
   uint16_t num_rows() const;
+  
+  // <-- Add these two
+  const uint16_t* get_lut() const;   // For gamma correction in renderer
 
  private:
   Hub75Config config_;

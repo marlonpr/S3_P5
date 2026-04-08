@@ -1,11 +1,10 @@
 #pragma once
 #include "hub75.h"
 
-class App
-{
+class App {
 public:
     void run();
 
 private:
-    Hub75Driver* driver = nullptr;
+    Hub75Driver* matrix = nullptr;
 };

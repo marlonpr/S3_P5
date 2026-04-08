@@ -64,6 +64,9 @@ RowBitPlaneBuffer* Hub75Driver::get_back_buffer() {
     return dma_->get_back_buffer();
 }
 
+RowBitPlaneBuffer* clear_template_;
+size_t dma_frame_size_;
+
 uint8_t Hub75Driver::bit_depth() const {
   if (!dma_) {
     return 0;
@@ -77,6 +80,16 @@ uint16_t Hub75Driver::dma_width() const {
     return 0;
   }
   return dma_->dma_width();
+}
+
+const uint16_t* Hub75Driver::get_lut() const {
+    // Just return the compile-time LUT from hub75 namespace
+    return hub75::get_lut();
+}
+
+uint16_t Hub75Driver::num_rows() const {
+    if (!dma_) return 0;
+    return dma_->num_rows();   // ← correct
 }
 
 
