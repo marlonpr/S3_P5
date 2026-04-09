@@ -24,6 +24,19 @@ void begin(Hub75Driver* drv)
     panel_height_ = driver_->get_height();
     panel_width_  = driver_->get_width();         // needed by transform
     lut_          = driver_->get_lut();
+	
+	
+	
+	//lut_ = driver_->get_cie_lut(); 
+
+	    // 2. CRITICAL: Generate the 64-bit parallel processing tables
+	    generate_bit_luts();
+	
+	
+	
+	
+	
+	
 
     // --- transform parameters (mirror GdmaDma fields) ---
     rotation_          = driver_->get_rotation();
@@ -48,6 +61,42 @@ void begin(Hub75Driver* drv)
     gL_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
     bL_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
 }
+
+
+// Add these as private members
+uint64_t* bit_luts[6]; // R1, G1, B1, R2, G2, B2
+
+void generate_bit_luts() {
+    for (int i = 0; i < 6; i++) {
+        bit_luts[i] = (uint64_t*)heap_caps_malloc(256 * sizeof(uint64_t), MALLOC_CAP_INTERNAL);
+        for (int val = 0; val < 256; val++) {
+            uint64_t entry = 0;
+            for (int bit = 0; bit < 8; bit++) {
+                // If the bit is set in the color, set the corresponding pin-bit 
+                // in the corresponding byte of the 64-bit word
+                if ((val >> bit) & 1) {
+                    entry |= ((uint64_t)1 << (bit * 8 + i));
+                }
+            }
+            bit_luts[i][val] = entry;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ======================================================
 // FRAMEBUFFER ACCESS  (native DMA coords — internal use)
@@ -95,6 +144,52 @@ inline void set_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
     pixel_native(px, row, is_lower) = { r, g, b };
 }
 
+void draw_gradient(int frame)
+{
+    // 1. Pre-calculate values outside the loop
+    const bool is_identity = (rotation_ == Hub75Rotation::ROTATE_0) 
+                           && !needs_layout_remap_ 
+                           && !needs_scan_remap_;
+
+    if (is_identity) {
+        // FAST PATH: Direct memory access with pointers
+        RGB* ptr = rowpairs_;
+        for (int row = 0; row < scan_rows_; row++) {
+            for (int x = 0; x < width_; x++) {
+                uint8_t v = (x + frame) & 255;
+                // Directly set the Upper pixel for this row/x
+                ptr[x].r = v;
+                ptr[x].g = 0;
+                ptr[x].b = 255 - v;
+                
+                // Directly set the Lower pixel for this row/x
+                // (In identity, Lower pixel is exactly 'width_' pixels ahead)
+                ptr[x + width_].r = v; 
+                ptr[x + width_].g = 0;
+                ptr[x + width_].b = 255 - v;
+            }
+            // Move pointer to the start of the next rowpair block
+            ptr += (width_ * 2); 
+        }
+    } else {
+        // SLOW PATH: Use the robust coordinate transform
+        for (int y = 0; y < virtual_height_; y++) {
+            for (int x = 0; x < virtual_width_; x++) {
+                uint8_t v = (x + frame) & 255;
+                set_pixel(x, y, v, 0, 255 - v);
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
 // ======================================================
 // CLEAR
 // ======================================================
@@ -110,37 +205,37 @@ void render_planes()
 {
     RowBitPlaneBuffer* buffers = driver_->get_back_buffer();
     if (!buffers) return;
+	
+	// If the LUTs aren't ready, don't even try to render
+	    if (!lut_ || !bit_luts[0]) {
+	        return; 
+	    }
 
     const size_t stride = width_ * sizeof(uint16_t);
 
     for (int row = 0; row < scan_rows_; row++)
     {
-        // Build LUT caches for this row-pair
         for (int x = 0; x < width_; x++)
         {
+            // 1. Get corrected colors (as you were doing)
             RGB& up   = pixel_native(x, row, false);
             RGB& down = pixel_native(x, row, true);
 
-            rU_[x] = lut_[up.r];   gU_[x] = lut_[up.g];   bU_[x] = lut_[up.b];
-            rL_[x] = lut_[down.r]; gL_[x] = lut_[down.g]; bL_[x] = lut_[down.b];
-        }
+            // 2. Parallel Bit Extraction using LUTs
+            // We combine all 6 color components into one 64-bit "plane-stream"
+            uint64_t planes_stream = 
+                bit_luts[0][lut_[up.r]] | bit_luts[1][lut_[up.g]] | bit_luts[2][lut_[up.b]] |
+                bit_luts[3][lut_[down.r]] | bit_luts[4][lut_[down.g]] | bit_luts[5][lut_[down.b]];
 
-        // Plane-major write (cache-friendly)
-        for (int bit = 0; bit < planes_; bit++)
-        {
-            uint16_t* dst = (uint16_t*)(buffers[row].data + bit * stride);
-
-            for (int x = 0; x < width_; x++)
+            // 3. Scatter the bytes into the DMA buffers
+            // This loop is very fast because 'planes_stream' is in a CPU register
+            for (int bit = 0; bit < planes_; bit++)
             {
-                uint16_t rgb =
-                    (((rU_[x] >> bit) & 1) << 0) |
-                    (((gU_[x] >> bit) & 1) << 1) |
-                    (((bU_[x] >> bit) & 1) << 2) |
-                    (((rL_[x] >> bit) & 1) << 3) |
-                    (((gL_[x] >> bit) & 1) << 4) |
-                    (((bL_[x] >> bit) & 1) << 5);
-
-                dst[x] = (dst[x] & ~0x003F) | rgb;
+                uint16_t* dst = (uint16_t*)(buffers[row].data + bit * stride);
+                uint8_t rgb6 = (uint8_t)(planes_stream >> (bit * 8));
+                
+                // Update only the lower 6 bits
+                dst[x] = (dst[x] & ~0x003F) | rgb6;
             }
         }
     }

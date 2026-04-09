@@ -112,24 +112,9 @@ void log_system_stats()
 
 void render_frame(Hub75FastRenderer& renderer, int frame)
 {
-    renderer.clear();   // important for animation
-
-    for (int y = 0; y < 32; y++)
-    {
-        for (int x = 0; x < 64; x++)
-        {
-            uint8_t v = (x + frame) & 255;
-
-            renderer.set_pixel(
-                x,
-                y,
-                v,          // R
-                0,          // G
-                255 - v     // B
-            );
-        }
-    }
-	renderer.render_planes();
+    // renderer.clear(); // You might not even need this anymore if drawing full screen!
+    renderer.draw_gradient(frame);
+    renderer.render_planes();
 }
 
 extern "C" void app_main(void)
@@ -177,15 +162,28 @@ extern "C" void app_main(void)
 
 	int frame = 0;
 
+	// Outside your loop:
+	TickType_t xLastWakeTime = xTaskGetTickCount();
+	const TickType_t xFrequency = pdMS_TO_TICKS(16); // 16ms for ~60 FPS
+
 	while (true)
 	{
 	    render_frame(renderer, frame);
-
 	    driver.flip_buffer();
 	    frame = (frame + 1) & 255;
-		
-		log_system_stats();
+	    
+	    log_system_stats();
 
-	    vTaskDelay(pdMS_TO_TICKS(16)); // ~60 FPS
+	    // Replaces vTaskDelay. This guarantees exactly 16ms between loops!
+	    vTaskDelayUntil(&xLastWakeTime, xFrequency); 
 	}
 }
+
+/*
+// Draw pixels - changes appear automatically!
+driver.set_pixel(10, 10, 255, 0, 0);  // Red
+driver.set_pixel(20, 20, 0, 255, 0);  // Green
+driver.set_pixel(30, 30, 0, 0, 255);  // Blue
+
+driver.flip_buffer();  // Atomic swap
+*/
