@@ -1,183 +1,174 @@
 #pragma once
 #include "esp_heap_caps.h"
 #include "hub75.h"
-#include <stdio.h>
 #include <string.h>
 
 class Hub75FastRenderer
 {
 public:
 
-    void begin(Hub75Driver* drv)
-    {
-        driver_       = drv;
+// ======================================================
+// INIT
+// ======================================================
+void begin(Hub75Driver* drv)
+{
+    driver_ = drv;
 
-        planes_       = driver_->bit_depth();
-        width_        = driver_->dma_width();
-        scan_rows_    = driver_->num_rows();
-        panel_height_ = driver_->get_height();
-        lut_          = driver_->get_lut();
+    planes_       = driver_->bit_depth();
+    width_        = driver_->dma_width();
+    scan_rows_    = driver_->num_rows();
+    panel_height_ = driver_->get_height();
+    lut_          = driver_->get_lut();
 
-        row_mask_   = scan_rows_ - 1;
-        lower_mask_ = panel_height_ >> 1;
-    }
-	
-	// --------------------------------------------------
-	// FAST CLEAR (animation safe)
-	// --------------------------------------------------	
-	// in Hub75FastRenderer (private)
-	uint8_t* clear_template_ = nullptr;
-	size_t   clear_template_size_ = 0;
+    //----------------------------------
+    // Row-pair RGB framebuffer
+    //----------------------------------
+    rowpairs_ = (RGB*)heap_caps_malloc(
+        sizeof(RGB) * width_ * scan_rows_ * 2,
+        MALLOC_CAP_INTERNAL);
 
-	// call once after begin()
-	void build_clear_template()
-	{
-	    if (!driver_) return;
-	    RowBitPlaneBuffer* buffers = driver_->get_back_buffer();
-	    if (!buffers) return;
+    memset(rowpairs_, 0, sizeof(RGB) * width_ * scan_rows_ * 2);
 
-	    const size_t plane_stride = width_ * 2;
-	    clear_template_size_ = scan_rows_ * planes_ * plane_stride;
+    //----------------------------------
+    // LUT caches (upper + lower)
+    //----------------------------------
+    rU_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
+    gU_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
+    bU_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
 
-	    // allocate DMA-capable memory
-	    clear_template_ = (uint8_t*)heap_caps_malloc(clear_template_size_, MALLOC_CAP_DMA);
-	    if (!clear_template_) return;
+    rL_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
+    gL_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
+    bL_ = (uint16_t*)heap_caps_malloc(width_ * sizeof(uint16_t), MALLOC_CAP_INTERNAL);
+}
 
-	    // Fill template by copying current back buffer then zeroing RGB bits
-	    for (int row = 0; row < scan_rows_; ++row)
-	    {
-	        uint8_t* src = buffers[row].data;
-	        uint8_t* dst = clear_template_ + row * planes_ * plane_stride;
-	        memcpy(dst, src, planes_ * plane_stride);
-
-	        constexpr uint16_t RGB_MASK = 0x003F;
-	        for (int bit = 0; bit < planes_; ++bit)
-	        {
-	            uint16_t* buf = (uint16_t*)(dst + bit * plane_stride);
-	            for (int x = 0; x < width_; ++x)
-	                buf[x] &= ~RGB_MASK;
-	        }
-	    }
-	}
-
-	// ultra-fast clear
-	void clear_fast()
-	{
-	    if (!driver_ || !clear_template_) return;
-	    RowBitPlaneBuffer* buffers = driver_->get_back_buffer();
-	    if (!buffers) return;
-
-	    // If back buffer is contiguous starting at buffers[0].data:
-	    uint8_t* back = (uint8_t*)buffers[0].data;
-	    memcpy(back, clear_template_, clear_template_size_);
-
-	    // If not contiguous, copy per-row:
-	    // for (int row = 0; row < scan_rows_; ++row)
-	    //   memcpy(buffers[row].data, clear_template_ + row*row_size, row_size);
-	}
-
-
-    // --------------------------------------------------
-    // SAFE FAST PIXEL WRITE
-    // --------------------------------------------------
-    inline void draw_pixel(int x, int y,
-                           uint8_t r,
-                           uint8_t g,
-                           uint8_t b)
-    {
-        if (!driver_) return;
-
-        // ⭐ ALWAYS fetch current back buffer
-        RowBitPlaneBuffer* buffers =
-            driver_->get_back_buffer();
-
-        if (!buffers) return;
-
-        uint16_t row  = y & row_mask_;
-        bool is_lower = (y & lower_mask_);
-
-        const uint16_t rc = lut_[r];
-        const uint16_t gc = lut_[g];
-        const uint16_t bc = lut_[b];
-
-        constexpr uint16_t upper_mask = 0x0007u;
-        constexpr uint16_t lower_mask_rgb = 0x0038u;
-
-        const size_t plane_stride = width_ * 2;
-
-        uint8_t* base = buffers[row].data;
-
-        if (!base) return;   // ← prevents panic
-
-        for (int bit = 0; bit < planes_; bit++)
-        {
-            uint16_t* buf =
-                (uint16_t*)(base + bit * plane_stride);
-
-            uint16_t word = buf[x];
-
-            if (is_lower)
-            {
-                word = (word & ~lower_mask_rgb)
-                     | (((rc>>bit)&1)<<3)
-                     | (((gc>>bit)&1)<<4)
-                     | (((bc>>bit)&1)<<5);
-            }
-            else
-            {
-                word = (word & ~upper_mask)
-                     | (((rc>>bit)&1)<<0)
-                     | (((gc>>bit)&1)<<1)
-                     | (((bc>>bit)&1)<<2);
-            }
-
-            buf[x] = word;
-        }
-    }
-
-private:
-
-    Hub75Driver*    driver_ = nullptr;
-    const uint16_t* lut_    = nullptr;
-
-    int planes_        = 0;
-    int width_         = 0;
-    int scan_rows_     = 0;
-    int panel_height_  = 0;
-
-    int row_mask_      = 0;
-    int lower_mask_    = 0;
+// ======================================================
+// RGB STRUCT
+// ======================================================
+struct RGB
+{
+    uint8_t r,g,b;
 };
 
-/*
+// ======================================================
+// FRAMEBUFFER ACCESS
+// ======================================================
+inline RGB& pixel(int x,int y)
+{
+    int rowpair = y % scan_rows_;
+    bool lower  = y >= scan_rows_;
+
+    int index =
+        rowpair * width_ * 2 +
+        (lower ? width_ : 0) +
+        x;
+
+    return rowpairs_[index];
+}
+
+inline void set_pixel(int x,int y,uint8_t r,uint8_t g,uint8_t b)
+{
+    if (x < 0 || x >= width_) return;
+    if (y < 0 || y >= panel_height_) return;
+
+    pixel(x,y) = {r,g,b};
+}
+
+// ======================================================
+// CLEAR FRAMEBUFFER
+// ======================================================
 void clear()
 {
-    if (!driver_) return;
+    memset(rowpairs_, 0, sizeof(RGB) * width_ * scan_rows_ * 2);
+}
 
-    RowBitPlaneBuffer* buffers =
-        driver_->get_back_buffer();
+// ======================================================
+// EFFECT EXAMPLE
+// ======================================================
+void build_gradient(int frame)
+{
+    for (int r = 0; r < scan_rows_; r++)
+    {
+        for (int x = 0; x < width_; x++)
+        {
+            uint8_t v = (x + frame) & 255;
 
+            pixel(x, r)                 = { v, 0, (uint8_t)(255-v) };          // upper
+            pixel(x, r + scan_rows_)    = { (uint8_t)(255-v), 0, v };          // lower
+        }
+    }
+}
+
+// ======================================================
+// RENDER PLANES (ROW-PAIR NATIVE)
+// ======================================================
+void render_planes()
+{
+    RowBitPlaneBuffer* buffers = driver_->get_back_buffer();
     if (!buffers) return;
 
-    constexpr uint16_t RGB_MASK = 0x003F; // bits 0..5
-
-    const size_t plane_stride = width_ * 2;
+    const size_t stride = width_ * sizeof(uint16_t);
 
     for (int row = 0; row < scan_rows_; row++)
     {
-        uint8_t* base = buffers[row].data;
-        if (!base) continue;
+        //----------------------------------
+        // Build LUTs for this row pair
+        //----------------------------------
+        for (int x = 0; x < width_; x++)
+        {
+            RGB& up   = pixel(x, row);           
+            RGB& down = pixel(x, row + scan_rows_);
 
+            rU_[x] = lut_[up.r];
+            gU_[x] = lut_[up.g];
+            bU_[x] = lut_[up.b];
+
+            rL_[x] = lut_[down.r];
+            gL_[x] = lut_[down.g];
+            bL_[x] = lut_[down.b];
+        }
+
+        //----------------------------------
+        // Plane-major write
+        //----------------------------------
         for (int bit = 0; bit < planes_; bit++)
         {
-            uint16_t* buf =
-                (uint16_t*)(base + bit * plane_stride);
+            uint16_t* dst = (uint16_t*)(buffers[row].data + bit * stride);
 
             for (int x = 0; x < width_; x++)
             {
-                buf[x] &= ~RGB_MASK;
+                uint16_t rgb =
+                    (((rU_[x] >> bit) & 1) << 0) |
+                    (((gU_[x] >> bit) & 1) << 1) |
+                    (((bU_[x] >> bit) & 1) << 2) |
+                    (((rL_[x] >> bit) & 1) << 3) |
+                    (((gL_[x] >> bit) & 1) << 4) |
+                    (((bL_[x] >> bit) & 1) << 5);
+
+                dst[x] = (dst[x] & ~0x003F) | rgb;
             }
         }
     }
 }
-*/
+
+private:
+Hub75Driver* driver_ = nullptr;
+const uint16_t* lut_ = nullptr;
+
+int planes_       = 0;
+int width_        = 0;
+int scan_rows_    = 0;
+int panel_height_ = 0;
+
+// Row-pair framebuffer
+RGB* rowpairs_ = nullptr;
+
+// LUT caches (upper and lower)
+uint16_t* rU_ = nullptr;
+uint16_t* gU_ = nullptr;
+uint16_t* bU_ = nullptr;
+
+uint16_t* rL_ = nullptr;
+uint16_t* gL_ = nullptr;
+uint16_t* bL_ = nullptr;
+
+};
