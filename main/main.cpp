@@ -6,6 +6,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
+#include "esp_timer.h"
+
 static const char* TAG = "MAIN";
 
 static Hub75Config make_config()
@@ -47,6 +49,89 @@ static Hub75Config make_config()
 
 
 
+static const char* TAG2 = "STATS";
+
+void log_system_stats()
+{
+    static uint64_t last_time    = 0;
+    static int      frames       = 0;
+    static uint32_t last_idle[2] = {0, 0};
+
+    frames++;
+
+    uint64_t now = esp_timer_get_time(); // µs
+    if (now - last_time < 1000000ULL) return;
+
+    TaskStatus_t tasks[16];
+    uint32_t total_runtime;
+    int n = uxTaskGetSystemState(tasks, 16, &total_runtime);
+
+    uint32_t idle_runtime[2] = {0, 0};
+
+    for (int i = 0; i < n; i++) {
+        ESP_LOGI(TAG, "  %-16s runtime=%lu",
+                 tasks[i].pcTaskName,
+                 tasks[i].ulRunTimeCounter);
+
+        if (strstr(tasks[i].pcTaskName, "IDLE0"))
+            idle_runtime[0] += tasks[i].ulRunTimeCounter;
+        else if (strstr(tasks[i].pcTaskName, "IDLE1"))
+            idle_runtime[1] += tasks[i].ulRunTimeCounter;
+    }
+
+    uint32_t delta_idle[2] = {
+        idle_runtime[0] - last_idle[0],
+        idle_runtime[1] - last_idle[1],
+    };
+
+    last_idle[0] = idle_runtime[0];
+    last_idle[1] = idle_runtime[1];
+
+    if (last_time == 0) {
+        last_time = now;
+        frames    = 0;
+        return;
+    }
+
+    uint64_t elapsed_us = now - last_time;
+
+    float cpu0 = 100.0f - (100.0f * delta_idle[0] / elapsed_us);
+    float cpu1 = 100.0f - (100.0f * delta_idle[1] / elapsed_us);
+    float total_cpu = (cpu0 + cpu1) / 2.0f;
+
+    ESP_LOGI(TAG2, "FPS=%d  CPU0=%.1f%%  CPU1=%.1f%%  TOTAL=%.1f%%",
+             frames, cpu0, cpu1, total_cpu);
+
+    frames    = 0;
+    last_time = now;
+}
+
+
+
+
+
+void render_frame(Hub75FastRenderer& renderer, int frame)
+{
+    renderer.clear();   // important for animation
+
+    for (int y = 0; y < 32; y++)
+    {
+        for (int x = 0; x < 64; x++)
+        {
+            uint8_t v = (x + frame) & 255;
+
+            renderer.set_pixel(
+                x,
+                y,
+                v,          // R
+                0,          // G
+                255 - v     // B
+            );
+        }
+    }
+	renderer.render_planes();
+}
+
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "Starting HUB75");
@@ -85,15 +170,22 @@ extern "C" void app_main(void)
 	renderer.clear();
 	renderer.set_pixel(10,10,255,0,0);
 	renderer.set_pixel(20,20,0,255,0);
-	renderer.set_pixel(30,31,0,0,255);
+	renderer.set_pixel(30,30,0,0,255);
 
 	renderer.render_planes();
 	driver.flip_buffer();
 
+	int frame = 0;
 
 	while (true)
 	{
-		vTaskDelay(pdMS_TO_TICKS(16));
+	    render_frame(renderer, frame);
+
+	    driver.flip_buffer();
+	    frame = (frame + 1) & 255;
+		
+		log_system_stats();
+
+	    vTaskDelay(pdMS_TO_TICKS(16)); // ~60 FPS
 	}
 }
-

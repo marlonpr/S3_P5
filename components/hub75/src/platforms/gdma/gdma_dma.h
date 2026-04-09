@@ -110,6 +110,18 @@ class GdmaDma : public PlatformDma {
   uint16_t num_rows() const override { return num_rows_; }
   
   
+  Hub75Rotation    get_rotation()       const override { return rotation_; }
+  bool             needs_layout_remap() const override { return needs_layout_remap_; }
+  bool             needs_scan_remap()   const override { return needs_scan_remap_; }
+  Hub75PanelLayout get_layout()         const override { return layout_; }
+  Hub75ScanWiring  get_scan_wiring()    const override { return scan_wiring_; }
+  uint16_t         get_layout_rows()    const override { return layout_rows_; }
+  uint16_t         get_layout_cols()    const override { return layout_cols_; }
+  uint16_t         get_virtual_width()  const override { return virtual_width_; }
+  uint16_t         get_virtual_height() const override { return virtual_height_; }
+  uint16_t         get_panel_width()    const override { return panel_width_; }
+  uint16_t         get_panel_height()   const override { return panel_height_; }
+  
   
   
   

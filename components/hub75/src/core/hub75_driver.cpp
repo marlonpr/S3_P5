@@ -93,6 +93,61 @@ uint16_t Hub75Driver::num_rows() const {
 }
 
 
+
+
+// In hub75_driver.cpp — add these implementations
+
+bool Hub75Driver::needs_layout_remap() const {
+    if (!dma_) return false;
+    return dma_->needs_layout_remap();
+}
+
+bool Hub75Driver::needs_scan_remap() const {
+    if (!dma_) return false;
+    return dma_->needs_scan_remap();
+}
+
+Hub75PanelLayout Hub75Driver::get_layout() const {
+    if (!dma_) return {};
+    return dma_->get_layout();
+}
+
+Hub75ScanWiring Hub75Driver::get_scan_wiring() const {
+    if (!dma_) return {};
+    return dma_->get_scan_wiring();
+}
+
+uint16_t Hub75Driver::get_layout_rows() const {
+    if (!dma_) return 0;
+    return dma_->get_layout_rows();
+}
+
+uint16_t Hub75Driver::get_layout_cols() const {
+    if (!dma_) return 0;
+    return dma_->get_layout_cols();
+}
+
+uint16_t Hub75Driver::get_virtual_width() const {
+    if (!dma_) return 0;
+    return dma_->get_virtual_width();
+}
+
+uint16_t Hub75Driver::get_virtual_height() const {
+    if (!dma_) return 0;
+    return dma_->get_virtual_height();
+}
+
+
+
+
+
+
+
+
+
+
+
+
 // ============================================================================
 // Initialization
 // ============================================================================

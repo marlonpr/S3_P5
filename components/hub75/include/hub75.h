@@ -223,6 +223,26 @@ class Hub75Driver {
   
   // <-- Add these two
   const uint16_t* get_lut() const;   // For gamma correction in renderer
+  
+  
+  
+  // Add to Hub75Driver class declaration
+  bool             needs_layout_remap() const;
+  bool             needs_scan_remap()   const;
+  Hub75PanelLayout get_layout()         const;
+  Hub75ScanWiring  get_scan_wiring()    const;
+  uint16_t         get_layout_rows()    const;
+  uint16_t         get_layout_cols()    const;
+  uint16_t         get_virtual_width()  const;
+  uint16_t         get_virtual_height() const;
+  
+  
+  
+  
+  
+  
+  
+  
 
  private:
   Hub75Config config_;
