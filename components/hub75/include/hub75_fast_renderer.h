@@ -3,6 +3,9 @@
 #include "hub75.h"
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "../src/platforms/platform_dma.h"
 
 
@@ -240,6 +243,8 @@ void render_planes()
         }
     }
 }
+
+
 
 private:
 Hub75Driver*      driver_      = nullptr;

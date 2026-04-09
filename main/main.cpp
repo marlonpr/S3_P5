@@ -8,6 +8,41 @@
 
 #include "esp_timer.h"
 
+// Structure to pass multiple arguments to the task if needed
+struct DisplayTaskConfig {
+    Hub75FastRenderer* renderer;
+    Hub75Driver* driver;
+};
+
+void display_update_task(void* pvParameters) {
+    DisplayTaskConfig* config = (DisplayTaskConfig*)pvParameters;
+    Hub75FastRenderer* renderer = config->renderer;
+    Hub75Driver* driver = config->driver;
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(16); // ~60 FPS
+    int frame = 0;
+
+    while (true) {
+        // 1. Logic & Drawing (Core 1)
+        renderer->draw_gradient(frame); 
+        
+        // 2. Bit-packing (Core 1)
+        renderer->render_planes();
+
+        // 3. Buffer Swap (DMA is already running on hardware)
+        driver->flip_buffer();
+
+        frame = (frame + 1) & 255;
+
+        // 4. Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+
+
+
 static const char* TAG = "MAIN";
 
 static Hub75Config make_config()
@@ -142,41 +177,26 @@ extern "C" void app_main(void)
     Hub75FastRenderer renderer;
     renderer.begin(&driver);
 	
-	/*
-	// Draw pixels - changes appear automatically!
-	driver.set_pixel(10, 10, 255, 0, 0);  // Red
-	driver.set_pixel(20, 20, 0, 255, 0);  // Green
-	driver.set_pixel(30, 30, 0, 0, 255);  // Blue
-	
-	driver.flip_buffer();  // Atomic swap
-	*/
-	
-	
-	renderer.clear();
-	renderer.set_pixel(10,10,255,0,0);
-	renderer.set_pixel(20,20,0,255,0);
-	renderer.set_pixel(30,30,0,0,255);
+	// Prepare task configuration
+	    static DisplayTaskConfig config2 = { &renderer, &driver };
 
-	renderer.render_planes();
-	driver.flip_buffer();
+	    // Create the task on Core 1 (APP_CPU)
+	    xTaskCreatePinnedToCore(
+	        display_update_task,   // Function to run
+	        "DisplayTask",         // Name
+	        4096,                  // Stack size (in bytes)
+	        &config2,               // Parameters
+	        10,                    // Priority (Higher = more important)
+	        NULL,                  // Task handle
+	        1                      // Core ID (1 = Core 1)
+	    );
 
-	int frame = 0;
-
-	// Outside your loop:
-	TickType_t xLastWakeTime = xTaskGetTickCount();
-	const TickType_t xFrequency = pdMS_TO_TICKS(16); // 16ms for ~60 FPS
-
-	while (true)
-	{
-	    render_frame(renderer, frame);
-	    driver.flip_buffer();
-	    frame = (frame + 1) & 255;
-	    
-	    log_system_stats();
-
-	    // Replaces vTaskDelay. This guarantees exactly 16ms between loops!
-	    vTaskDelayUntil(&xLastWakeTime, xFrequency); 
-	}
+	    // Core 0 is now FREE! 
+	    // You can start your Ethernet/W5500 or I2C tasks here.
+	    while(true) {
+	        log_system_stats(); // Log from Core 0 to see the new distribution
+	        vTaskDelay(pdMS_TO_TICKS(1000));
+	    }
 }
 
 /*
