@@ -8,11 +8,18 @@
 
 #include "esp_timer.h"
 
+#include "esp_heap_caps.h"
+#include "esp_system.h"
+#include "esp_chip_info.h"
+#include "freertos/atomic.h"
+
 // Structure to pass multiple arguments to the task if needed
 struct DisplayTaskConfig {
     Hub75FastRenderer* renderer;
     Hub75Driver* driver;
 };
+
+uint32_t g_frame_count = 0;
 
 void display_update_task(void* pvParameters) {
     DisplayTaskConfig* config = (DisplayTaskConfig*)pvParameters;
@@ -20,7 +27,8 @@ void display_update_task(void* pvParameters) {
     Hub75Driver* driver = config->driver;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(16); // ~60 FPS
+    //const TickType_t xFrequency = pdMS_TO_TICKS(16); // ~60 FPS
+	const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~30 FPS
     int frame = 0;
 
     while (true) {
@@ -33,7 +41,10 @@ void display_update_task(void* pvParameters) {
         // 3. Buffer Swap (DMA is already running on hardware)
         driver->flip_buffer();
 
-        frame = (frame + 1) & 255;
+		// In display_update_task — increment:
+		Atomic_Increment_u32(&g_frame_count);
+		
+		frame = (frame + 1) & 255;
 
         // 4. Timing
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -89,25 +100,24 @@ static const char* TAG2 = "STATS";
 void log_system_stats()
 {
     static uint64_t last_time    = 0;
-    static int      frames       = 0;
     static uint32_t last_idle[2] = {0, 0};
 
-    frames++;
+	uint64_t now = esp_timer_get_time();
+	if (now - last_time < 1000000ULL) return;  // ← interval check FIRST
 
-    uint64_t now = esp_timer_get_time(); // µs
-    if (now - last_time < 1000000ULL) return;
+	// Read and reset ONLY when we're actually going to log
+	uint32_t fps = g_frame_count;
+	g_frame_count = 0;                          // ← plain reset, no CompareAndSwap
 
+    // -------------------------------------------------------
+    // CPU usage (your existing logic)
+    // -------------------------------------------------------
     TaskStatus_t tasks[16];
     uint32_t total_runtime;
     int n = uxTaskGetSystemState(tasks, 16, &total_runtime);
 
     uint32_t idle_runtime[2] = {0, 0};
-
     for (int i = 0; i < n; i++) {
-        ESP_LOGI(TAG, "  %-16s runtime=%lu",
-                 tasks[i].pcTaskName,
-                 tasks[i].ulRunTimeCounter);
-
         if (strstr(tasks[i].pcTaskName, "IDLE0"))
             idle_runtime[0] += tasks[i].ulRunTimeCounter;
         else if (strstr(tasks[i].pcTaskName, "IDLE1"))
@@ -118,29 +128,77 @@ void log_system_stats()
         idle_runtime[0] - last_idle[0],
         idle_runtime[1] - last_idle[1],
     };
-
     last_idle[0] = idle_runtime[0];
     last_idle[1] = idle_runtime[1];
 
-    if (last_time == 0) {
-        last_time = now;
-        frames    = 0;
-        return;
-    }
+    if (last_time == 0) { last_time = now; return; }
 
     uint64_t elapsed_us = now - last_time;
-
     float cpu0 = 100.0f - (100.0f * delta_idle[0] / elapsed_us);
     float cpu1 = 100.0f - (100.0f * delta_idle[1] / elapsed_us);
-    float total_cpu = (cpu0 + cpu1) / 2.0f;
 
-    ESP_LOGI(TAG2, "FPS=%d  CPU0=%.1f%%  CPU1=%.1f%%  TOTAL=%.1f%%",
-             frames, cpu0, cpu1, total_cpu);
+    // -------------------------------------------------------
+    // Heap — most important for stability
+    // Internal SRAM only (DMA buffers live here)
+    // -------------------------------------------------------
+    size_t heap_free        = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t heap_min_ever    = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    size_t heap_largest     = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
 
-    frames    = 0;
+    // External PSRAM if present
+    size_t psram_free       = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+
+    // -------------------------------------------------------
+    // Stack watermarks — catches stack overflows before crash
+    // -------------------------------------------------------
+    UBaseType_t display_stack_hwm = 0;
+    UBaseType_t main_stack_hwm    = 0;
+    for (int i = 0; i < n; i++) {
+        if (strstr(tasks[i].pcTaskName, "DisplayTask"))
+            display_stack_hwm = tasks[i].usStackHighWaterMark;
+        else if (strstr(tasks[i].pcTaskName, "main"))
+            main_stack_hwm = tasks[i].usStackHighWaterMark;
+    }
+
+    // -------------------------------------------------------
+    // Uptime
+    // -------------------------------------------------------
+    uint32_t uptime_s = (uint32_t)(now / 1000000ULL);
+
+    // -------------------------------------------------------
+    // Log everything
+    // -------------------------------------------------------
+	ESP_LOGI(TAG2, "UP=%lus | FPS=%u | CPU0=%.1f%% CPU1=%.1f%%",
+	         uptime_s, fps, cpu0, cpu1);
+
+    ESP_LOGI(TAG2,
+        "HEAP internal: free=%u  min_ever=%u  largest_block=%u",
+        heap_free, heap_min_ever, heap_largest);
+
+    if (psram_free > 0)
+        ESP_LOGI(TAG2, "HEAP PSRAM: free=%u", psram_free);
+
+    ESP_LOGI(TAG2,
+        "STACK watermark: DisplayTask=%u words  main=%u words",
+        display_stack_hwm, main_stack_hwm);
+
+    // -------------------------------------------------------
+    // Warnings — things that indicate impending problems
+    // -------------------------------------------------------
+    if (heap_free < 20000)
+        ESP_LOGW(TAG2, "⚠ LOW HEAP: %u bytes free", heap_free);
+
+    if (heap_largest < 8000)
+        ESP_LOGW(TAG2, "⚠ HEAP FRAGMENTED: largest block only %u bytes", heap_largest);
+
+    if (display_stack_hwm < 128)
+        ESP_LOGW(TAG2, "⚠ DisplayTask STACK CLOSE TO OVERFLOW: %u words remaining", display_stack_hwm);
+
+    if (main_stack_hwm < 128)
+        ESP_LOGW(TAG2, "⚠ main STACK CLOSE TO OVERFLOW: %u words remaining", main_stack_hwm);
+
     last_time = now;
 }
-
 
 
 
@@ -184,7 +242,7 @@ extern "C" void app_main(void)
 	    xTaskCreatePinnedToCore(
 	        display_update_task,   // Function to run
 	        "DisplayTask",         // Name
-	        4096,                  // Stack size (in bytes)
+	        8192,                  // Stack size (in bytes)
 	        &config2,               // Parameters
 	        10,                    // Priority (Higher = more important)
 	        NULL,                  // Task handle
@@ -198,12 +256,3 @@ extern "C" void app_main(void)
 	        vTaskDelay(pdMS_TO_TICKS(1000));
 	    }
 }
-
-/*
-// Draw pixels - changes appear automatically!
-driver.set_pixel(10, 10, 255, 0, 0);  // Red
-driver.set_pixel(20, 20, 0, 255, 0);  // Green
-driver.set_pixel(30, 30, 0, 0, 255);  // Blue
-
-driver.flip_buffer();  // Atomic swap
-*/
