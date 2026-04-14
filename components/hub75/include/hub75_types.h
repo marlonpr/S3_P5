@@ -13,11 +13,6 @@
 extern "C" {
 #endif
 
-struct RowBitPlaneBuffer {
-    uint8_t* data;
-    size_t   buffer_size;
-};
-
 /**
  * @brief Pixel buffer format for bulk drawing operations
  */

@@ -30,7 +30,7 @@ class GdmaDma : public PlatformDma {
  public:
   GdmaDma(const Hub75Config &config);
   ~GdmaDma();
-  
+
   /**
    * @brief Initialize LCD_CAM peripheral with GDMA
    */
@@ -97,36 +97,6 @@ class GdmaDma : public PlatformDma {
   void flip_buffer() override;
 
   // ============================================================================
-  // Advanced Rendering Access (PlatformDma overrides)
-  // ============================================================================
-
-
-  RowBitPlaneBuffer* get_back_buffer() override;
-
-  uint8_t bit_depth() const override { return bit_depth_; }
-
-  uint16_t dma_width() const override { return dma_width_; }
-
-  uint16_t num_rows() const override { return num_rows_; }
-  
-  
-  Hub75Rotation    get_rotation()       const override { return rotation_; }
-  bool             needs_layout_remap() const override { return needs_layout_remap_; }
-  bool             needs_scan_remap()   const override { return needs_scan_remap_; }
-  Hub75PanelLayout get_layout()         const override { return layout_; }
-  Hub75ScanWiring  get_scan_wiring()    const override { return scan_wiring_; }
-  uint16_t         get_layout_rows()    const override { return layout_rows_; }
-  uint16_t         get_layout_cols()    const override { return layout_cols_; }
-  uint16_t         get_virtual_width()  const override { return virtual_width_; }
-  uint16_t         get_virtual_height() const override { return virtual_height_; }
-  uint16_t         get_panel_width()    const override { return panel_width_; }
-  uint16_t         get_panel_height()   const override { return panel_height_; }
-  
-  
-  
-  
-
-  // ============================================================================
   // Static Helper Functions (Public for compile-time validation)
   // ============================================================================
 
@@ -135,14 +105,11 @@ class GdmaDma : public PlatformDma {
    */
   static constexpr int calculate_bcm_transmissions(int bit_depth, int lsb_msb_transition);
 
-/*
-// Per-row buffer structure (holds all bit planes for one row)
-struct RowBitPlaneBuffer {
-  uint8_t *data;       // Contiguous buffer: [bit0 pixels][bit1 pixels]...[bitN pixels]
-  size_t buffer_size;  // Total size in bytes
-};
-*/ 
-
+  // Per-row buffer structure (holds all bit planes for one row)
+  struct RowBitPlaneBuffer {
+    uint8_t *data;       // Contiguous buffer: [bit0 pixels][bit1 pixels]...[bitN pixels]
+    size_t buffer_size;  // Total size in bytes
+  };
 
  private:
   void configure_lcd_clock();

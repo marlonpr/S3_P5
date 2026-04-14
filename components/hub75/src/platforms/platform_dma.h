@@ -92,92 +92,70 @@ class PlatformDma {
     return result;
   }
 
+  // ============================================================================
+  // Coordinate Transformation Helper
+  // ============================================================================
 
+  /**
+   * @brief Result of coordinate transformation
+   */
+  struct TransformedCoords {
+    uint16_t x, y, row;
+    bool is_lower;
+  };
+
+  /**
+   * @brief Transform virtual coordinates to physical DMA buffer coordinates
+   *
+   * Applies rotation, panel layout remapping, and scan pattern remapping,
+   * then calculates row index and upper/lower half.
+   *
+   * Pipeline: Rotation → Panel Layout → Scan Pattern
+   *
+   * @param px Input X coordinate (virtual display space, rotated)
+   * @param py Input Y coordinate (virtual display space, rotated)
+   * @param rotation Display rotation
+   * @param needs_layout_remap Whether layout remapping is needed
+   * @param needs_scan_remap Whether scan pattern remapping is needed
+   * @param layout Panel layout type
+   * @param scan_wiring Scan wiring pattern
+   * @param panel_width Single panel width
+   * @param panel_height Single panel height
+   * @param layout_rows Number of panel rows (layout_rows)
+   * @param layout_cols Number of panel columns (layout_cols)
+   * @param phys_width Physical (unrotated) display width
+   * @param phys_height Physical (unrotated) display height
+   * @param dma_width DMA buffer width
+   * @param num_rows Number of row pairs (panel_height / 2)
+   * @return Transformed coordinates with row index and half indicator
+   */
+  __attribute__((always_inline)) static inline TransformedCoords transform_coordinate(
+      uint16_t px, uint16_t py, Hub75Rotation rotation, bool needs_layout_remap, bool needs_scan_remap,
+      Hub75PanelLayout layout, Hub75ScanWiring scan_wiring, uint16_t panel_width, uint16_t panel_height,
+      uint16_t layout_rows, uint16_t layout_cols, uint16_t phys_width, uint16_t phys_height, uint16_t dma_width,
+      uint16_t num_rows) {
+    Coords c = {.x = px, .y = py};
+
+    // Step 1: Rotation transform (FIRST - convert rotated user coords to physical)
+    if (rotation != Hub75Rotation::ROTATE_0) {
+      c = RotationTransform::apply(c, rotation, phys_width, phys_height);
+    }
+
+    // Step 2: Panel layout remapping (if multi-panel grid)
+    if (needs_layout_remap) {
+      c = PanelLayoutRemap::remap(c, layout, panel_width, panel_height, layout_rows, layout_cols);
+    }
+
+    // Step 3: Scan pattern remapping (if non-standard panel)
+    // Pass panel_height to enable correct segment size calculation for four-scan panels
+    if (needs_scan_remap) {
+      c = ScanPatternRemap::remap(c, scan_wiring, panel_width, panel_height);
+    }
+
+    return {.x = c.x, .y = c.y, .row = static_cast<uint16_t>(c.y % num_rows), .is_lower = (c.y >= num_rows)};
+  }
 
  public:
- 
- 
- 
- 
- // ============================================================================
- // Coordinate Transformation Helper
- // ============================================================================
-
- /**
-  * @brief Result of coordinate transformation
-  */
- struct TransformedCoords {
-   uint16_t x, y, row;
-   bool is_lower;
- };
-
- /**
-  * @brief Transform virtual coordinates to physical DMA buffer coordinates
-  *
-  * Applies rotation, panel layout remapping, and scan pattern remapping,
-  * then calculates row index and upper/lower half.
-  *
-  * Pipeline: Rotation → Panel Layout → Scan Pattern
-  *
-  * @param px Input X coordinate (virtual display space, rotated)
-  * @param py Input Y coordinate (virtual display space, rotated)
-  * @param rotation Display rotation
-  * @param needs_layout_remap Whether layout remapping is needed
-  * @param needs_scan_remap Whether scan pattern remapping is needed
-  * @param layout Panel layout type
-  * @param scan_wiring Scan wiring pattern
-  * @param panel_width Single panel width
-  * @param panel_height Single panel height
-  * @param layout_rows Number of panel rows (layout_rows)
-  * @param layout_cols Number of panel columns (layout_cols)
-  * @param phys_width Physical (unrotated) display width
-  * @param phys_height Physical (unrotated) display height
-  * @param dma_width DMA buffer width
-  * @param num_rows Number of row pairs (panel_height / 2)
-  * @return Transformed coordinates with row index and half indicator
-  */
- __attribute__((always_inline)) static inline TransformedCoords transform_coordinate(
-     uint16_t px, uint16_t py, Hub75Rotation rotation, bool needs_layout_remap, bool needs_scan_remap,
-     Hub75PanelLayout layout, Hub75ScanWiring scan_wiring, uint16_t panel_width, uint16_t panel_height,
-     uint16_t layout_rows, uint16_t layout_cols, uint16_t phys_width, uint16_t phys_height, uint16_t dma_width,
-     uint16_t num_rows) {
-   Coords c = {.x = px, .y = py};
-
-   // Step 1: Rotation transform (FIRST - convert rotated user coords to physical)
-   if (rotation != Hub75Rotation::ROTATE_0) {
-     c = RotationTransform::apply(c, rotation, phys_width, phys_height);
-   }
-
-   // Step 2: Panel layout remapping (if multi-panel grid)
-   if (needs_layout_remap) {
-     c = PanelLayoutRemap::remap(c, layout, panel_width, panel_height, layout_rows, layout_cols);
-   }
-
-   // Step 3: Scan pattern remapping (if non-standard panel)
-   // Pass panel_height to enable correct segment size calculation for four-scan panels
-   if (needs_scan_remap) {
-     c = ScanPatternRemap::remap(c, scan_wiring, panel_width, panel_height);
-   }
-
-   return {.x = c.x, .y = c.y, .row = static_cast<uint16_t>(c.y % num_rows), .is_lower = (c.y >= num_rows)};
- }
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
   /**
    * @brief Initialize the DMA engine
    */
@@ -294,62 +272,6 @@ class PlatformDma {
   virtual void flip_buffer() {
     // Default: no-op (single buffer mode or not implemented)
   }
-  
-  // ============================================================================
-  // DMA Buffer Access (Advanced / Direct Rendering)
-  // ============================================================================
-
-  /**
-   * @brief Get pointer to back buffer row bitplanes
-   *
-   * Returns platform-owned DMA memory used for rendering.
-   * Valid only for platforms supporting direct DMA writes.
-   */
-  virtual RowBitPlaneBuffer* get_back_buffer() = 0;
-
-  /**
-   * @brief Bit depth used by DMA engine
-   */
-  virtual uint8_t bit_depth() const = 0;
-
-  /**
-   * @brief Width of DMA row in pixels (physical DMA stride)
-   */
-  virtual uint16_t dma_width() const = 0;
-
-  /**
-   * @brief Number of row pairs (panel_height / scan_factor)
-   */
-  virtual uint16_t num_rows() const = 0;
-  
-  
-  
-  
-  
-  // ============================================================================
-  // Coordinate Transform Parameters
-  // ============================================================================
-
-  // Coordinate transform parameter accessors
-    virtual Hub75Rotation    get_rotation()          const = 0;
-    virtual bool             needs_layout_remap()    const = 0;
-    virtual bool             needs_scan_remap()      const = 0;
-    virtual Hub75PanelLayout get_layout()            const = 0;
-    virtual Hub75ScanWiring  get_scan_wiring()       const = 0;
-    virtual uint16_t         get_layout_rows()       const = 0;
-    virtual uint16_t         get_layout_cols()       const = 0;
-    virtual uint16_t         get_virtual_width()     const = 0;
-    virtual uint16_t         get_virtual_height()    const = 0;
-    virtual uint16_t         get_panel_width()       const = 0;
-    virtual uint16_t         get_panel_height()      const = 0;
-  
-  
-  
-  
-  
-  
-  
-  
 };
 
 }  // namespace hub75

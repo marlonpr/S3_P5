@@ -25,14 +25,10 @@
 
 #ifdef __cplusplus
 
-
-
 // Forward declarations
 namespace hub75 {
 class PlatformDma;
 }  // namespace hub75
-
-
 
 /**
  * @brief Main Hub75 driver class
@@ -211,38 +207,6 @@ class Hub75Driver {
    * @return true if refresh loop is active
    */
   bool is_running() const;
-  
-  // ========================================================================
-  // Advanced DMA access (optional fast rendering path)
-  // ========================================================================
-
-  RowBitPlaneBuffer* get_back_buffer();
-  uint8_t bit_depth() const;
-  uint16_t dma_width() const;
-  uint16_t num_rows() const;
-  
-  // <-- Add these two
-  const uint16_t* get_lut() const;   // For gamma correction in renderer
-  
-  
-  
-  // Add to Hub75Driver class declaration
-  bool             needs_layout_remap() const;
-  bool             needs_scan_remap()   const;
-  Hub75PanelLayout get_layout()         const;
-  Hub75ScanWiring  get_scan_wiring()    const;
-  uint16_t         get_layout_rows()    const;
-  uint16_t         get_layout_cols()    const;
-  uint16_t         get_virtual_width()  const;
-  uint16_t         get_virtual_height() const;
-  
-  
-  
-  
-  
-  
-  
-  
 
  private:
   Hub75Config config_;

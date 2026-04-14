@@ -60,8 +60,7 @@ extern "C" {
  */
 #ifndef HUB75_BIT_DEPTH
 #ifdef CONFIG_HUB75_BIT_DEPTH
-//#define HUB75_BIT_DEPTH CONFIG_HUB75_BIT_DEPTH 6 - 8
-#define HUB75_BIT_DEPTH 6
+#define HUB75_BIT_DEPTH CONFIG_HUB75_BIT_DEPTH
 #else
 #define HUB75_BIT_DEPTH 8  // Default if no Kconfig
 #endif
