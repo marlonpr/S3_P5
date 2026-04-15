@@ -21,6 +21,13 @@ static Hub75Config make_config()
     config.shift_driver = Hub75ShiftDriver::FM6126A;
 	
     config.double_buffer = true;	
+	
+	// 2×2 grid — 128×64 virtual display
+	config.layout_rows  = 1;
+	config.layout_cols  = 4;
+
+	config.layout = Hub75PanelLayout::HORIZONTAL;
+	
 
     // Upper RGB
     config.pins.r1 = 4;
@@ -155,11 +162,12 @@ struct DisplayTaskConfig {
     Hub75Driver* driver;
 };
 
+//=============================== VERTICAL PIXEL TEST ==================================================
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
 	
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~30 FPS
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
 
     // 1. Create a dedicated counter for your animation
     uint32_t anim_frame = 0;
@@ -169,18 +177,18 @@ void display_update_task(void* pvParameters) {
 	    driver->clear();  // Clear back buffer
 		
         // 2. Use the animation counter, keeping it constrained between 0 and 63
-        uint32_t x_pos = anim_frame; 
+        uint32_t y_pos = anim_frame; 
 		
-		driver->set_pixel(x_pos, 10, 255, 255, 0);  // Red
-		driver->set_pixel(x_pos, 20, 0, 255, 255);  // Green
-		driver->set_pixel(x_pos, 30, 255, 0, 255);  // Blue
+		driver->set_pixel(31, y_pos, 255, 255, 0);  // Red
+		driver->set_pixel(61, y_pos, 0, 255, 255);  // Green
+		driver->set_pixel(91, y_pos, 255, 0, 255);  // Blue
 		
 	    driver->flip_buffer();  // Atomic swap
 				
         // 3. Increment both counters
         g_frame_count++; // Let the logger reset this one for FPS tracking
 		// This says: Increment, then immediately wrap the result to 0-63
-		anim_frame = (anim_frame + 1) % 64;    // Let this one grow forever for smooth animations
+		anim_frame = (anim_frame + 1) % 32;    // Let this one grow forever for smooth animations
 		
         // Timing
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -222,10 +230,83 @@ extern "C" void app_main(void)
 
 
 
-// 2×2 grid — 128×64 virtual display
-//config.layout_rows  = 1;
-//config.layout_cols  = 4;
 
-//config.layout = Hub75PanelLayout::HORIZONTAL;
+/*
+//=============================== HORIZONTAL PIXEL TEST ==================================================
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+	
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
 
-//config.output_clock_speed = Hub75ClockSpeed::HZ_16M;   // Clock speed
+    // 1. Create a dedicated counter for your animation
+    uint32_t anim_frame = 0;
+
+    while (true) 
+    {
+	    driver->clear();  // Clear back buffer
+		
+        // 2. Use the animation counter, keeping it constrained between 0 and 63
+        uint32_t x_pos = anim_frame; 
+		
+		driver->set_pixel(x_pos, 10, 255, 255, 0);  // Red
+		driver->set_pixel(x_pos, 20, 0, 255, 255);  // Green
+		driver->set_pixel(x_pos, 30, 255, 0, 255);  // Blue
+		
+	    driver->flip_buffer();  // Atomic swap
+				
+        // 3. Increment both counters
+        g_frame_count++; // Let the logger reset this one for FPS tracking
+		// This says: Increment, then immediately wrap the result to 0-63
+		anim_frame = (anim_frame + 1) % 256;    // Let this one grow forever for smooth animations
+		
+        // Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+/*
+//=============================== VERTICAL PIXEL TEST ==================================================
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+	
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
+
+    // 1. Create a dedicated counter for your animation
+    uint32_t anim_frame = 0;
+
+    while (true) 
+    {
+	    driver->clear();  // Clear back buffer
+		
+        // 2. Use the animation counter, keeping it constrained between 0 and 63
+        uint32_t y_pos = anim_frame; 
+		
+		driver->set_pixel(31, y_pos, 255, 255, 0);  // Red
+		driver->set_pixel(61, y_pos, 0, 255, 255);  // Green
+		driver->set_pixel(91, y_pos, 255, 0, 255);  // Blue
+		
+	    driver->flip_buffer();  // Atomic swap
+				
+        // 3. Increment both counters
+        g_frame_count++; // Let the logger reset this one for FPS tracking
+		// This says: Increment, then immediately wrap the result to 0-63
+		anim_frame = (anim_frame + 1) % 32;    // Let this one grow forever for smooth animations
+		
+        // Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+*/
