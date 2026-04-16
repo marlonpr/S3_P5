@@ -22,11 +22,11 @@ static Hub75Config make_config()
 	
     config.double_buffer = true;	
 	
-	// 2×2 grid — 128×64 virtual display
-	config.layout_rows  = 1;
-	config.layout_cols  = 4;
+	// N×M grid — virtual display
+	config.layout_rows  = 2;
+	config.layout_cols  = 3;
 
-	config.layout = Hub75PanelLayout::HORIZONTAL;
+	config.layout = Hub75PanelLayout::TOP_LEFT_DOWN_ZIGZAG;
 	
 
     // Upper RGB
@@ -111,13 +111,13 @@ void log_system_stats()
     // Stack watermarks — catches stack overflows before crash
     // -------------------------------------------------------
     UBaseType_t display_stack_hwm = 0;
-    //UBaseType_t main_stack_hwm    = 0;
+    UBaseType_t main_stack_hwm    = 0;
     for (int i = 0; i < n; i++) 
 	{
         if (strstr(tasks[i].pcTaskName, "DisplayTask"))
             display_stack_hwm = tasks[i].usStackHighWaterMark;
-        //else if (strstr(tasks[i].pcTaskName, "main"))
-            //main_stack_hwm = tasks[i].usStackHighWaterMark;
+        else if (strstr(tasks[i].pcTaskName, "main"))
+            main_stack_hwm = tasks[i].usStackHighWaterMark;
     }
 
     // -------------------------------------------------------
@@ -138,8 +138,8 @@ void log_system_stats()
         ESP_LOGI(TAG2, "HEAP PSRAM: free=%u", psram_free);
 
     ESP_LOGI(TAG2,
-        "STACK water mark: DisplayTask=%u words",//  main=%u words",
-        display_stack_hwm);//, main_stack_hwm);
+        "STACK water mark: DisplayTask=%u words  main=%u words",
+        display_stack_hwm, main_stack_hwm);
 
     // -------------------------------------------------------
     // Warnings — things that indicate impending problems
@@ -151,8 +151,8 @@ void log_system_stats()
     if (display_stack_hwm < 128)
         ESP_LOGW(TAG2, "⚠ DisplayTask STACK CLOSE TO OVERFLOW: %u words remaining", display_stack_hwm);
 
-    //if (main_stack_hwm < 128)
-        //ESP_LOGW(TAG2, "⚠ main STACK CLOSE TO OVERFLOW: %u words remaining", main_stack_hwm);
+    if (main_stack_hwm < 128)
+        ESP_LOGW(TAG2, "⚠ main STACK CLOSE TO OVERFLOW: %u words remaining", main_stack_hwm);
 
     last_time = now;
 }
@@ -162,7 +162,7 @@ struct DisplayTaskConfig {
     Hub75Driver* driver;
 };
 
-//=============================== VERTICAL PIXEL TEST ==================================================
+//=============================== HORIZONTAL AND VERTICAL PIXEL TEST ==================================================
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
 	
@@ -170,25 +170,40 @@ void display_update_task(void* pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
 
     // 1. Create a dedicated counter for your animation
-    uint32_t anim_frame = 0;
+	
+	uint32_t anim_frame_x = 0;
+	
+    uint32_t anim_frame_y = 0;
 
     while (true) 
     {
 	    driver->clear();  // Clear back buffer
 		
         // 2. Use the animation counter, keeping it constrained between 0 and 63
-        uint32_t y_pos = anim_frame; 
 		
-		driver->set_pixel(31, y_pos, 255, 255, 0);  // Red
-		driver->set_pixel(61, y_pos, 0, 255, 255);  // Green
-		driver->set_pixel(91, y_pos, 255, 0, 255);  // Blue
+		uint32_t x_pos = anim_frame_x;
+		
+        uint32_t y_pos = anim_frame_y; 
+		
+		driver->set_pixel(61, y_pos, 255, 255, 0);  // Red
+		driver->set_pixel(91, y_pos, 0, 255, 255);  // Green
+		driver->set_pixel(121, y_pos, 255, 0, 255);  // Blue
+		
+		
+		driver->set_pixel(x_pos, 16, 255, 255, 0);  // Red
+		driver->set_pixel(x_pos, 32, 0, 255, 255);  // Green
+		driver->set_pixel(x_pos, 48, 255, 0, 255);  // Blue
+		
 		
 	    driver->flip_buffer();  // Atomic swap
 				
         // 3. Increment both counters
         g_frame_count++; // Let the logger reset this one for FPS tracking
 		// This says: Increment, then immediately wrap the result to 0-63
-		anim_frame = (anim_frame + 1) % 32;    // Let this one grow forever for smooth animations
+		
+		anim_frame_x = (anim_frame_x + 1) % 192;    // Let this one grow forever for smooth animations
+		
+		anim_frame_y = (anim_frame_y + 1) % 64;    // Let this one grow forever for smooth animations
 		
         // Timing
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -232,6 +247,7 @@ extern "C" void app_main(void)
 
 
 /*
+
 //=============================== HORIZONTAL PIXEL TEST ==================================================
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
@@ -264,7 +280,6 @@ void display_update_task(void* pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
-*/
 
 
 
@@ -276,7 +291,8 @@ void display_update_task(void* pvParameters) {
 
 
 
-/*
+
+
 //=============================== VERTICAL PIXEL TEST ==================================================
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
@@ -309,4 +325,94 @@ void display_update_task(void* pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
+
+
+
+
+
+
+//=============================== HORIZONTAL AND VERTICAL PIXEL TEST ==================================================
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+	
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
+
+    // 1. Create a dedicated counter for your animation
+	
+	uint32_t anim_frame_x = 0;
+	
+    uint32_t anim_frame_y = 0;
+
+    while (true) 
+    {
+	    driver->clear();  // Clear back buffer
+		
+        // 2. Use the animation counter, keeping it constrained between 0 and 63
+		
+		uint32_t x_pos = anim_frame_x;
+		
+        uint32_t y_pos = anim_frame_y; 
+		
+		driver->set_pixel(31, y_pos, 255, 255, 0);  // Red
+		driver->set_pixel(61, y_pos, 0, 255, 255);  // Green
+		driver->set_pixel(91, y_pos, 255, 0, 255);  // Blue
+		
+		
+		driver->set_pixel(x_pos, 10, 255, 255, 0);  // Red
+		driver->set_pixel(x_pos, 20, 0, 255, 255);  // Green
+		driver->set_pixel(x_pos, 30, 255, 0, 255);  // Blue
+		
+		
+	    driver->flip_buffer();  // Atomic swap
+				
+        // 3. Increment both counters
+        g_frame_count++; // Let the logger reset this one for FPS tracking
+		// This says: Increment, then immediately wrap the result to 0-63
+		
+		anim_frame_x = (anim_frame_x + 1) % 128;    // Let this one grow forever for smooth animations
+		
+		anim_frame_y = (anim_frame_y + 1) % 64;    // Let this one grow forever for smooth animations
+		
+        // Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+
+//=============================== POSITION PIXEL TEST ==================================================
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+	
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
+
+    while (true) 
+    {
+	    driver->clear();  // Clear back buffer
+		
+		driver->set_pixel(0, 0, 255, 0, 0);  // Red
+		driver->set_pixel(127, 63, 0, 255, 0);  // Green
+		driver->set_pixel(63, 31, 0, 0, 255);  // Blue
+		
+		
+		driver->set_pixel(20, 20, 255, 255, 0);  // yellow
+		driver->set_pixel(40, 40, 0, 255, 255);  // cian
+		driver->set_pixel(60, 60, 255, 0, 255);  // purple
+		
+		
+	    driver->flip_buffer();  // Atomic swap
+				
+        // 3. Increment both counters
+        g_frame_count++; // Let the logger reset this one for FPS tracking
+		
+        // Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+
+
+
+
 */
