@@ -5,6 +5,14 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
+#include "draw_text.h"
+#include "draw_bitmap.h"
+
+#include "logo.h"
+
+
+
+
 
 uint32_t g_frame_count = 0;
 
@@ -162,53 +170,40 @@ struct DisplayTaskConfig {
     Hub75Driver* driver;
 };
 
-//=============================== HORIZONTAL AND VERTICAL PIXEL TEST ==================================================
+//=============================== DRAW TEXT ==================================================
+// In display_update_task — replace the pixel calls with text
+
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
-	
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
+    const TickType_t xFrequency = pdMS_TO_TICKS(33);
 
-    // 1. Create a dedicated counter for your animation
-	
-	uint32_t anim_frame_x = 0;
-	
-    uint32_t anim_frame_y = 0;
+    char buf[32];
+    uint32_t frame = 0;
 
-    while (true) 
-    {
-	    driver->clear();  // Clear back buffer
-		
-        // 2. Use the animation counter, keeping it constrained between 0 and 63
-		
-		uint32_t x_pos = anim_frame_x;
-		
-        uint32_t y_pos = anim_frame_y; 
-		
-		driver->set_pixel(61, y_pos, 255, 255, 0);  // Red
-		driver->set_pixel(91, y_pos, 0, 255, 255);  // Green
-		driver->set_pixel(121, y_pos, 255, 0, 255);  // Blue
-		
-		
-		driver->set_pixel(x_pos, 16, 255, 255, 0);  // Red
-		driver->set_pixel(x_pos, 32, 0, 255, 255);  // Green
-		driver->set_pixel(x_pos, 48, 255, 0, 255);  // Blue
-		
-		
-	    driver->flip_buffer();  // Atomic swap
-				
-        // 3. Increment both counters
-        g_frame_count++; // Let the logger reset this one for FPS tracking
-		// This says: Increment, then immediately wrap the result to 0-63
-		
-		anim_frame_x = (anim_frame_x + 1) % 192;    // Let this one grow forever for smooth animations
-		
-		anim_frame_y = (anim_frame_y + 1) % 64;    // Let this one grow forever for smooth animations
-		
-        // Timing
+    while (true) {
+        driver->clear();
+
+        // Scrolling FPS counter — cyan on black
+        snprintf(buf, sizeof(buf), "FPS:%" PRId32, g_frame_count);
+        draw_string(*driver, (frame % 192), 2, buf, 0, 255, 255);
+
+        // Static label — white with solid black background
+        draw_string(*driver, 64, 31, "HUB75 OK",
+                    255, 255, 255,
+                    true, 0, 0, 255); //bg_enable
+
+        driver->flip_buffer();
+        g_frame_count++;
+        frame++;
+
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
+
+
+
 
 // Better practice: create it statically so it lives forever
 static Hub75Config config = make_config();
@@ -331,7 +326,7 @@ void display_update_task(void* pvParameters) {
 
 
 
-//=============================== HORIZONTAL AND VERTICAL PIXEL TEST ==================================================
+//=============================== HORIZONTAL AND VERTICAL PIXEL TEST 2x2 ==================================================
 void display_update_task(void* pvParameters) {
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
 	
@@ -413,6 +408,117 @@ void display_update_task(void* pvParameters) {
 
 
 
+
+//=============================== HORIZONTAL AND VERTICAL PIXEL TEST 3x2 ==================================================
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+	
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~33 to 30 FPS, ~16 to 60 FPS
+
+    // 1. Create a dedicated counter for your animation
+	
+	uint32_t anim_frame_x = 0;
+	
+    uint32_t anim_frame_y = 0;
+
+    while (true) 
+    {
+	    driver->clear();  // Clear back buffer
+		
+        // 2. Use the animation counter, keeping it constrained between 0 and 63
+		
+		uint32_t x_pos = anim_frame_x;
+		
+        uint32_t y_pos = anim_frame_y; 
+		
+		driver->set_pixel(61, y_pos, 255, 255, 0);  // Red
+		driver->set_pixel(91, y_pos, 0, 255, 255);  // Green
+		driver->set_pixel(121, y_pos, 255, 0, 255);  // Blue
+		
+		
+		driver->set_pixel(x_pos, 16, 255, 255, 0);  // Red
+		driver->set_pixel(x_pos, 32, 0, 255, 255);  // Green
+		driver->set_pixel(x_pos, 48, 255, 0, 255);  // Blue
+		
+		
+	    driver->flip_buffer();  // Atomic swap
+				
+        // 3. Increment both counters
+        g_frame_count++; // Let the logger reset this one for FPS tracking
+		// This says: Increment, then immediately wrap the result to 0-63
+		
+		anim_frame_x = (anim_frame_x + 1) % 192;    // Let this one grow forever for smooth animations
+		
+		anim_frame_y = (anim_frame_y + 1) % 64;    // Let this one grow forever for smooth animations
+		
+        // Timing
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+
+//=============================== DRAW TEXT ==================================================
+// In display_update_task — replace the pixel calls with text
+
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(33);
+
+    char buf[32];
+    uint32_t frame = 0;
+
+    while (true) {
+        driver->clear();
+
+        // Scrolling FPS counter — cyan on black
+        snprintf(buf, sizeof(buf), "FPS:%" PRId32, g_frame_count);
+        draw_string(*driver, (frame % 192), 2, buf, 0, 255, 255);
+
+        // Static label — white with solid black background
+        draw_string(*driver, 20, 20, "HUB75 OK",
+                    255, 255, 255,
+                    true, 0, 0, 255); //bg_enable
+
+        driver->flip_buffer();
+        g_frame_count++;
+        frame++;
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+
+
+
+
+//=============================== DRAW BITMAP 3X2 ==================================================
+// In display_update_task — replace the pixel calls with text
+
+// ── In your animation task ───────────────────────────────────────────────────
+void display_update_task(void* pvParameters) {
+    Hub75Driver* driver = (Hub75Driver*)pvParameters;
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(60);
+
+    while (true) {
+        driver->clear();
+
+        // Scrolling sprite — clips automatically as it enters/exits
+		draw_bitmap_color(*driver, 0, 0, 192, 64,
+		                  (const uint8_t*)SPRITE_LOGO,
+		                  Hub75PixelFormat::RGB565);
+
+
+        driver->flip_buffer();
+        g_frame_count++;
+
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
 
 
 */
