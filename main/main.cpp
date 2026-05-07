@@ -1,22 +1,17 @@
+#include <stdio.h>
 #include "hub75.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "esp_log.h"
 
 #include "ds3231.h"
 #include "led_panel.h"
 #include "ds18b20.h"
 
-#include <inttypes.h>
-#include <stdio.h>
-
 #define DS18B20_GPIO GPIO_NUM_39
 
 static const char* TAG = "MAIN";
-
-uint32_t g_frame_count = 0;
 
 // =============================== SHARED DATA ===============================
 
@@ -42,53 +37,54 @@ void display_update_task(void* pvParameters)
     Hub75Driver* driver = (Hub75Driver*)pvParameters;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(33); // about 30 FPS
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // ~30 FPS
 
-    char line1[32];
-    char line2[32];
+	char line1[32];
+	char line2[32];		
 
     while (true) {
-        ds3231_time_t now_copy;
-        float temp_copy;
-        bool rtc_valid_copy;
-        bool temp_valid_copy;
+		ds3231_time_t now_copy;
+		float temp_copy;
+		bool rtc_valid_copy;
+		bool temp_valid_copy;
 
-        portENTER_CRITICAL(&g_data_mux);
-        now_copy = g_now;
-        temp_copy = g_temp_c;
-        rtc_valid_copy = g_rtc_valid;
-        temp_valid_copy = g_temp_valid;
-        portEXIT_CRITICAL(&g_data_mux);
-
+		portENTER_CRITICAL(&g_data_mux);
+		now_copy = g_now;
+		temp_copy = g_temp_c;
+		rtc_valid_copy = g_rtc_valid;
+		temp_valid_copy = g_temp_valid;
+		portEXIT_CRITICAL(&g_data_mux);
         driver->clear();
+		
+		if (!scroll_is_active()) {
+		    scroll_start("JUEVES 7 MAYO 2026", 12, 0, 255, 0, 10);
+		}
+        scroll_update(*driver);	
+		
+		if (rtc_valid_copy) {
+		    snprintf(line1, sizeof(line1),
+		             "%02d:%02d:%02d",
+		             now_copy.hour,
+		             now_copy.minute,
+		             now_copy.second);
 
-        if (rtc_valid_copy) {
-            snprintf(line1, sizeof(line1),
-                     "%02d:%02d:%02d",
-                     now_copy.hour,
-                     now_copy.minute,
-                     now_copy.second);
+		    draw_string(*driver, 8, 2, line1, 0, 255, 255);
+		} else {
+		    draw_string(*driver, 2, 2, "NO RTC", 255, 0, 0);
+		}
 
-            draw_string(*driver, 2, 2, line1, 0, 255, 255);
-        } else {
-            draw_string(*driver, 2, 2, "NO RTC", 255, 0, 0);
-        }
+		if (temp_valid_copy) {
+		    snprintf(line2, sizeof(line2),
+		             "%.1fC",
+		             temp_copy);
 
-        if (temp_valid_copy) {
-            snprintf(line2, sizeof(line2),
-                     "%.1fC",
-                     temp_copy);
-
-            draw_string(*driver, 2, 21, line2, 255, 255, 255);
-        } else {
-            draw_string(*driver, 2, 21, "NO TEMP", 255, 0, 0);
-        }
+		    draw_string(*driver, 17, 22, line2, 255, 128, 255);
+		} else {
+		    draw_string(*driver, 12, 22, "NO TEMP", 255, 0, 0);
+		}	
 
         driver->flip_buffer();
-
-        g_frame_count++;
-
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);		
     }
 }
 
@@ -106,16 +102,6 @@ void rtc_task(void* pvParameters)
             g_now = now;
             g_rtc_valid = true;
             portEXIT_CRITICAL(&g_data_mux);
-
-            ESP_LOGI(TAG,
-                     "%04d-%02d-%02d %02d:%02d:%02d DOW=%d",
-                     now.year,
-                     now.month,
-                     now.day,
-                     now.hour,
-                     now.minute,
-                     now.second,
-                     now.day_of_week);
         } else {
             ESP_LOGE(TAG, "Failed to read DS3231");
         }
@@ -139,9 +125,7 @@ void ds18b20_task(void* pvParameters)
             portENTER_CRITICAL(&g_data_mux);
             g_temp_c = temp_c;
             g_temp_valid = true;
-            portEXIT_CRITICAL(&g_data_mux);
-
-            ESP_LOGI(TAG, "DS18B20 temperature: %.2f C", temp_c);
+            portEXIT_CRITICAL(&g_data_mux);			
         } else if (ret == ESP_ERR_NOT_FOUND) {
             portENTER_CRITICAL(&g_data_mux);
             g_temp_valid = false;

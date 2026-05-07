@@ -1,61 +1,50 @@
 // led_panel.h
+#pragma once
 #include "hub75.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_timer.h"
-#include "esp_heap_caps.h"
-#include "draw_text.h"
-#include "draw_bitmap.h"
+#include <stdint.h>
 
-#include "logo.h"
+#ifdef __cplusplus
+extern "C++" {
+#endif
 
+Hub75Config make_config(void);
 
+int draw_char(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable = false,
+              uint8_t bg_r = 0,
+              uint8_t bg_g = 0,
+              uint8_t bg_b = 0);
 
-static Hub75Config make_config()
-{
-    Hub75Config config{};
+int draw_string(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable = false,
+                uint8_t bg_r = 0,
+                uint8_t bg_g = 0,
+                uint8_t bg_b = 0);
+				
+// ================= SCROLL TEXT =================
 
-    config.panel_width  = 64;
-    config.panel_height = 32;	
+void scroll_start(const char *text,
+                  int y,
+                  uint8_t r,
+                  uint8_t g,
+                  uint8_t b,
+                  int speed_px_per_sec);
 
-    config.scan_wiring = Hub75ScanWiring::SCAN_1_8_32PX_FULL;
-    config.shift_driver = Hub75ShiftDriver::FM6126A;
-	
-    config.double_buffer = true;	
-	
-	// N×M grid — virtual display
-	config.layout_rows  = 1;
-	config.layout_cols  = 1;
+void scroll_stop(void);
 
-	config.layout = Hub75PanelLayout::TOP_LEFT_DOWN_ZIGZAG;
-	
+bool scroll_is_active(void);
 
-    // Upper RGB
-    config.pins.r1 = 4;
-    config.pins.g1 = 5;
-    config.pins.b1 = 6;
+void scroll_update(Hub75Driver& drv);
 
-    // Lower RGB
-    config.pins.r2 = 7;
-    config.pins.g2 = 15;
-    config.pins.b2 = 16;
-
-    // Address
-    config.pins.a = 11;
-    config.pins.b = 12;
-    config.pins.c = 13;
-    config.pins.d = 14;
-    config.pins.e = -1;
-
-    // Control
-    config.pins.lat = 9;
-    config.pins.oe  = 10;
-    config.pins.clk = 8;
-
-    return config;
+#ifdef __cplusplus
 }
-
+#endif
 
 
 // Structure to pass multiple arguments to the task if needed
