@@ -10,20 +10,21 @@
 #include "led_panel.h"
 #include "ds18b20.h"
 
-#include "nvs_flash.h"
-#include "nvs.h"
-
-
+#include "clock_settings.h"
 
 #include "freertos/queue.h"
 #include "driver/gpio.h"
-
 
 
 #define DS18B20_GPIO GPIO_NUM_39
 #define PIN_MENU GPIO_NUM_40
 #define PIN_UP   GPIO_NUM_41
 #define PIN_DOWN GPIO_NUM_42
+
+#define BUTTON_HOLD_MS     1000
+#define BUTTON_DEBOUNCE_MS 250
+
+#define BTN_NONE ((button_t)-1)
 
 #define MENU_TIMEOUT_US (10 * 1000000) // 10 seconds
 
@@ -625,9 +626,6 @@ static void exit_menu(void)
     ESP_LOGI(TAG, "Menu exited");
 }
 
-//=====SAVE MENU VALUES MOVED TO NVS SECTION======
-
-
 
 static void draw_menu_screen(Hub75Driver *driver)
 {
@@ -954,204 +952,7 @@ static void init_buttons(void)
 
 
 
-// =============================== NVS SETTINGS ===============================
 
-#define NVS_NAMESPACE "clock_cfg"
-#define NVS_KEY_FORMAT "format"
-#define NVS_KEY_MODE   "mode"
-
-#define NVS_KEY_BRIGHTNESS "brightness"
-
-static esp_err_t init_nvs_settings(void)
-{
-    esp_err_t ret = nvs_flash_init();
-
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "NVS initialized");
-    } else {
-        ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
-    }
-
-    return ret;
-}
-
-static void save_clock_format(hour_format_t format)
-{
-    nvs_handle_t handle;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "NVS open failed for format save: %s", esp_err_to_name(ret));
-        return;
-    }
-
-    uint8_t value = (uint8_t)format;
-
-    ret = nvs_set_u8(handle, NVS_KEY_FORMAT, value);
-    if (ret == ESP_OK) {
-        ret = nvs_commit(handle);
-    }
-
-    nvs_close(handle);
-
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Clock format saved: %d", value);
-    } else {
-        ESP_LOGE(TAG, "Clock format save failed: %s", esp_err_to_name(ret));
-    }
-}
-
-static hour_format_t load_clock_format(void)
-{
-    nvs_handle_t handle;
-    uint8_t value = FORMAT_12H;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No saved clock format, using default 12H");
-        return FORMAT_12H;
-    }
-
-    ret = nvs_get_u8(handle, NVS_KEY_FORMAT, &value);
-    nvs_close(handle);
-
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Clock format not found, using default 12H");
-        return FORMAT_12H;
-    }
-
-    if (value > FORMAT_24H) {
-        value = FORMAT_12H;
-    }
-
-    ESP_LOGI(TAG, "Clock format loaded: %d", value);
-
-    return (hour_format_t)value;
-}
-
-static void save_display_mode(display_mode_t mode)
-{
-    nvs_handle_t handle;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "NVS open failed for mode save: %s", esp_err_to_name(ret));
-        return;
-    }
-
-    uint8_t value = (uint8_t)mode;
-
-    ret = nvs_set_u8(handle, NVS_KEY_MODE, value);
-    if (ret == ESP_OK) {
-        ret = nvs_commit(handle);
-    }
-
-    nvs_close(handle);
-
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Display mode saved: %d", value);
-    } else {
-        ESP_LOGE(TAG, "Display mode save failed: %s", esp_err_to_name(ret));
-    }
-}
-
-static display_mode_t load_display_mode(void)
-{
-    nvs_handle_t handle;
-    uint8_t value = MODE_1;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No saved display mode, using MODE_1");
-        return MODE_1;
-    }
-
-    ret = nvs_get_u8(handle, NVS_KEY_MODE, &value);
-    nvs_close(handle);
-
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Display mode not found, using MODE_1");
-        return MODE_1;
-    }
-
-    if (value < MODE_1 || value > MODE_ROTATION) {
-        value = MODE_1;
-    }
-
-    ESP_LOGI(TAG, "Display mode loaded: %d", value);
-
-    return (display_mode_t)value;
-}
-
-static void save_brightness_level(int level)
-{
-    if (level < 1) {
-        level = 1;
-    }
-
-    if (level > 10) {
-        level = 10;
-    }
-
-    nvs_handle_t handle;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "NVS open failed for brightness save: %s", esp_err_to_name(ret));
-        return;
-    }
-
-    uint8_t value = (uint8_t)level;
-
-    ret = nvs_set_u8(handle, NVS_KEY_BRIGHTNESS, value);
-    if (ret == ESP_OK) {
-        ret = nvs_commit(handle);
-    }
-
-    nvs_close(handle);
-
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Brightness saved: %d", value);
-    } else {
-        ESP_LOGE(TAG, "Brightness save failed: %s", esp_err_to_name(ret));
-    }
-}
-
-static int load_brightness_level(void)
-{
-    nvs_handle_t handle;
-    uint8_t value = 5;
-
-    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No saved brightness, using default 5");
-        return 5;
-    }
-
-    ret = nvs_get_u8(handle, NVS_KEY_BRIGHTNESS, &value);
-    nvs_close(handle);
-
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Brightness not found, using default 5");
-        return 5;
-    }
-
-    if (value < 1 || value > 10) {
-        value = 5;
-    }
-
-    ESP_LOGI(TAG, "Brightness loaded: %d", value);
-
-    return value;
-}
-
-//====================================================================================================
 
 
 
@@ -1174,7 +975,7 @@ static void save_menu_values(ds3231_dev_t *rtc)
 
 	    brightness_level = temporal_brightness;
 	    driver.set_brightness(brightness_level_to_hub75(brightness_level));
-	    save_brightness_level(brightness_level);
+	    clock_settings_save_brightness((uint8_t)brightness_level);
 
 	    show_temp_message("GUARDADO", 1000);
 	    ESP_LOGI(TAG, "RTC time and brightness saved");
@@ -1301,9 +1102,119 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
     }
 }
 
+static int button_pin(button_t btn)
+{
+    switch (btn)
+    {
+        case BTN_MENU:
+            return PIN_MENU;
 
+        case BTN_UP:
+            return PIN_UP;
 
+        case BTN_DOWN:
+            return PIN_DOWN;
 
+        default:
+            return -1;
+    }
+}
+
+static bool button_is_pressed(button_t btn)
+{
+    int pin = button_pin(btn);
+
+    if (pin < 0) {
+        return false;
+    }
+
+    /*
+     * Your buttons use falling edge and external pull-ups:
+     * released = HIGH
+     * pressed  = LOW
+     */
+    return gpio_get_level((gpio_num_t)pin) == 0;
+}
+
+static bool all_buttons_released(void)
+{
+    return gpio_get_level(PIN_MENU) &&
+           gpio_get_level(PIN_UP)   &&
+           gpio_get_level(PIN_DOWN);
+}
+
+static void handle_normal_button(button_t btn, ds3231_dev_t *rtc)
+{
+    switch (btn)
+    {
+        case BTN_MENU:
+            enter_menu(rtc);
+            break;
+
+        case BTN_UP:
+        {
+            display_mode_t new_mode;
+
+            portENTER_CRITICAL(&g_data_mux);
+
+            if (display_mode >= MODE_ROTATION) {
+                display_mode = MODE_1;
+            } else {
+                display_mode = (display_mode_t)(display_mode + 1);
+            }
+
+            new_mode = display_mode;
+
+            rotation_last_change_us = 0;
+            rotation_screen = MODE_1;
+
+            portEXIT_CRITICAL(&g_data_mux);
+
+            clock_settings_save_mode((uint8_t)new_mode);
+
+            scroll_stop();
+
+            char msg[16];
+            snprintf(msg, sizeof(msg), "MODO:%d", new_mode);
+            show_temp_message(msg, 1000);
+
+            ESP_LOGI(TAG, "Display mode changed to %d", new_mode);
+
+            break;
+        }
+
+        case BTN_DOWN:
+        {
+            hour_format_t new_format;
+
+            portENTER_CRITICAL(&g_data_mux);
+
+            if (clock_format == FORMAT_12H) {
+                clock_format = FORMAT_24H;
+            } else {
+                clock_format = FORMAT_12H;
+            }
+
+            new_format = clock_format;
+
+            portEXIT_CRITICAL(&g_data_mux);
+
+            clock_settings_save_format((uint8_t)new_format);
+
+            show_temp_message(new_format == FORMAT_24H ? "24HRS:ON" : "24HRS:OFF",
+                              1000);
+
+            ESP_LOGI(TAG,
+                     "Clock format changed to %s",
+                     new_format == FORMAT_24H ? "24H" : "12H");
+
+            break;
+        }
+
+        default:
+            break;
+    }
+}
 
 
 
@@ -1312,103 +1223,121 @@ void button_task(void *arg)
 {
     ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
 
-    const TickType_t debounce_time = pdMS_TO_TICKS(250);
-
     TickType_t last_press_time[3] = {
         0,
         0,
         0
     };
 
+    button_t pending_hold_btn = BTN_NONE;
+    TickType_t pending_hold_start = 0;
+
+    bool ignore_until_release = false;
+
     while (true)
     {
         button_t btn;
+        TickType_t now = xTaskGetTickCount();
 
-        if (xQueueReceive(button_queue, &btn, portMAX_DELAY))
+        /*
+         * Use short timeout instead of portMAX_DELAY so the task can check
+         * whether a pending button has been held long enough.
+         */
+		 if (xQueueReceive(button_queue, &btn, pdMS_TO_TICKS(10)))
+		 {
+		     if (btn < BTN_MENU || btn > BTN_DOWN) {
+		         continue;
+		     }
+
+		     /*
+		      * Important:
+		      * After a hold action outside the menu, ignore any queued/bounce events
+		      * until all buttons are released.
+		      */
+		     if (ignore_until_release) {
+		         continue;
+		     }
+
+		     if ((now - last_press_time[btn]) < pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
+		         continue;
+		     }
+
+		     last_press_time[btn] = now;
+
+		     /*
+		      * Inside menu:
+		      * Buttons act immediately.
+		      */
+		     if (menu_active)
+		     {
+		         handle_menu_button(btn, rtc);
+		         continue;
+		     }
+
+		     /*
+		      * Outside menu:
+		      * Do not execute immediately.
+		      * Start hold detection.
+		      */
+		     pending_hold_btn = btn;
+		     pending_hold_start = now;
+
+		     ESP_LOGI(TAG, "Button %d pressed, waiting for hold", btn);
+		 }
+
+        /*
+         * Outside menu only:
+         * Execute action after the button stays pressed for BUTTON_HOLD_MS.
+         */
+        if (!menu_active &&
+            pending_hold_btn != BTN_NONE &&
+            !ignore_until_release)
         {
-            TickType_t now = xTaskGetTickCount();
-
-            if ((now - last_press_time[btn]) < debounce_time) {
-                continue;
-            }
-
-            last_press_time[btn] = now;
-
-            if (menu_active) {
-                handle_menu_button(btn, rtc);
-                continue;
-            }
-
-            switch (btn)
+            if (button_is_pressed(pending_hold_btn))
             {
-                case BTN_MENU:
-                    enter_menu(rtc);
-                    break;
+                now = xTaskGetTickCount();
 
-					case BTN_UP:
-					{
-					    display_mode_t new_mode;
+				if ((now - pending_hold_start) >= pdMS_TO_TICKS(BUTTON_HOLD_MS))
+				{
+				    ESP_LOGI(TAG, "Button %d hold accepted", pending_hold_btn);
 
-					    portENTER_CRITICAL(&g_data_mux);
+				    handle_normal_button(pending_hold_btn, rtc);
 
-					    if (display_mode >= MODE_ROTATION) {
-					        display_mode = MODE_1;
-					    } else {
-					        display_mode = (display_mode_t)(display_mode + 1);
-					    }
+				    /*
+				     * Remove any queued bounce/repeat events generated during the hold.
+				     */
+				    xQueueReset(button_queue);
 
-					    new_mode = display_mode;
+				    /*
+				     * Prevent repeated triggers while the button remains held.
+				     * Also prevents MENU from immediately advancing from BRILLO to HORA.
+				     */
+				    pending_hold_btn = BTN_NONE;
+				    ignore_until_release = true;
+				}
+            }
+            else
+            {
+                /*
+                 * Button was released before hold time.
+                 * Cancel action.
+                 */
+                ESP_LOGI(TAG, "Button hold cancelled");
 
-					    rotation_last_change_us = 0;
-					    rotation_screen = MODE_1;
-
-					    portEXIT_CRITICAL(&g_data_mux);
-
-					    save_display_mode(new_mode);
-
-					    scroll_stop();
-
-					    char msg[16];
-					    snprintf(msg, sizeof(msg), "MODO:%d", new_mode);
-					    show_temp_message(msg, 1000);
-
-					    ESP_LOGI(TAG, "Display mode changed to %d", new_mode);
-
-					    break;
-					}
-
-					case BTN_DOWN:
-					{
-					    hour_format_t new_format;
-
-					    portENTER_CRITICAL(&g_data_mux);
-
-					    if (clock_format == FORMAT_12H) {
-					        clock_format = FORMAT_24H;
-					    } else {
-					        clock_format = FORMAT_12H;
-					    }
-
-					    new_format = clock_format;
-
-					    portEXIT_CRITICAL(&g_data_mux);
-
-					    save_clock_format(new_format);
-
-					    show_temp_message(new_format == FORMAT_24H ? "24HRS:ON" : "24HRS:OFF",
-					                      1000);
-
-					    ESP_LOGI(TAG,
-					             "Clock format changed to %s",
-					             new_format == FORMAT_24H ? "24H" : "12H");
-
-					    break;
-					}
-
-                default:
-                    break;
+                pending_hold_btn = BTN_NONE;
             }
         }
+
+        /*
+         * Re-arm buttons only after all are released.
+         */
+        if (all_buttons_released())
+        {
+            pending_hold_btn = BTN_NONE;
+            ignore_until_release = false;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -1430,15 +1359,21 @@ extern "C" void app_main(void)
         return;
     }
 	
-	ESP_ERROR_CHECK(init_nvs_settings());
+	ESP_ERROR_CHECK(clock_settings_init());
 
-	clock_format = load_clock_format();
-	display_mode = load_display_mode();
-	
-	
-	
-	
-	brightness_level = load_brightness_level();
+	uint8_t saved_format = clock_settings_load_format((uint8_t)FORMAT_12H);
+	if (saved_format > FORMAT_24H) {
+	    saved_format = FORMAT_12H;
+	}
+	clock_format = (hour_format_t)saved_format;
+
+	uint8_t saved_mode = clock_settings_load_mode((uint8_t)MODE_1);
+	if (saved_mode < MODE_1 || saved_mode > MODE_ROTATION) {
+	    saved_mode = MODE_1;
+	}
+	display_mode = (display_mode_t)saved_mode;
+
+	brightness_level = clock_settings_load_brightness(5);
 
 	if (brightness_level < 1) {
 	    brightness_level = 1;
