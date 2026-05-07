@@ -10,6 +10,9 @@
 #include "led_panel.h"
 #include "ds18b20.h"
 
+#include "nvs_flash.h"
+#include "nvs.h"
+
 
 
 #include "freertos/queue.h"
@@ -24,13 +27,14 @@
 
 #define MENU_TIMEOUT_US (10 * 1000000) // 10 seconds
 
+// =============================== MENU STATE ===============================
+
 static int64_t menu_last_action_us = 0;
 
 
-// =============================== MENU STATE ===============================
-
 typedef enum {
     MENU_IDLE = 0,
+    MENU_BRIGHTNESS,
     MENU_HOUR,
     MENU_MINUTE,
     MENU_DAY,
@@ -76,6 +80,23 @@ static const char* TAG = "MAIN";
 static char g_message[32] = {0};
 static bool g_message_active = false;
 static int64_t g_message_until_us = 0;
+
+
+static int brightness_level = 5;        // 1 to 10
+static int temporal_brightness = 5;     // temporary menu value while editing
+
+static uint8_t brightness_level_to_hub75(int level)
+{
+    if (level < 1) {
+        level = 1;
+    }
+
+    if (level > 10) {
+        level = 10;
+    }
+
+    return (uint8_t)((level * 255) / 10);
+}
 
 
 
@@ -582,7 +603,8 @@ static void enter_menu(ds3231_dev_t *rtc)
     }
 
     menu_active = true;
-    menu_state = MENU_HOUR;
+	temporal_brightness = brightness_level;
+	menu_state = MENU_BRIGHTNESS;
 
     refresh_menu_timeout();
 
@@ -603,32 +625,7 @@ static void exit_menu(void)
     ESP_LOGI(TAG, "Menu exited");
 }
 
-static void save_menu_values(ds3231_dev_t *rtc)
-{
-    if (!rtc) {
-        return;
-    }
-
-    tmp_time.second = 0;
-    update_tmp_weekday();
-
-    esp_err_t ret = ds3231_set_time(rtc, &tmp_time);
-
-    if (ret == ESP_OK) {
-        portENTER_CRITICAL(&g_data_mux);
-        g_now = tmp_time;
-        g_rtc_valid = true;
-        portEXIT_CRITICAL(&g_data_mux);
-
-        show_temp_message("GUARDADO", 1000);
-        ESP_LOGI(TAG, "RTC time saved");
-    } else {
-        show_temp_message("ERROR", 1000);
-        ESP_LOGE(TAG, "Failed to save RTC time: %s", esp_err_to_name(ret));
-    }
-
-    exit_menu();
-}
+//=====SAVE MENU VALUES MOVED TO NVS SECTION======
 
 
 
@@ -638,6 +635,10 @@ static void draw_menu_screen(Hub75Driver *driver)
 
     switch (menu_state)
     {
+		case MENU_BRIGHTNESS:
+		    snprintf(buf, sizeof(buf), "BRILLO:%d", temporal_brightness);
+		    break;
+			
         case MENU_HOUR:
             snprintf(buf, sizeof(buf), "HORA:%02d", tmp_time.hour);
             break;
@@ -951,12 +952,269 @@ static void init_buttons(void)
 }
 
 
+
+
+// =============================== NVS SETTINGS ===============================
+
+#define NVS_NAMESPACE "clock_cfg"
+#define NVS_KEY_FORMAT "format"
+#define NVS_KEY_MODE   "mode"
+
+#define NVS_KEY_BRIGHTNESS "brightness"
+
+static esp_err_t init_nvs_settings(void)
+{
+    esp_err_t ret = nvs_flash_init();
+
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "NVS initialized");
+    } else {
+        ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+static void save_clock_format(hour_format_t format)
+{
+    nvs_handle_t handle;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed for format save: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    uint8_t value = (uint8_t)format;
+
+    ret = nvs_set_u8(handle, NVS_KEY_FORMAT, value);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Clock format saved: %d", value);
+    } else {
+        ESP_LOGE(TAG, "Clock format save failed: %s", esp_err_to_name(ret));
+    }
+}
+
+static hour_format_t load_clock_format(void)
+{
+    nvs_handle_t handle;
+    uint8_t value = FORMAT_12H;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No saved clock format, using default 12H");
+        return FORMAT_12H;
+    }
+
+    ret = nvs_get_u8(handle, NVS_KEY_FORMAT, &value);
+    nvs_close(handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Clock format not found, using default 12H");
+        return FORMAT_12H;
+    }
+
+    if (value > FORMAT_24H) {
+        value = FORMAT_12H;
+    }
+
+    ESP_LOGI(TAG, "Clock format loaded: %d", value);
+
+    return (hour_format_t)value;
+}
+
+static void save_display_mode(display_mode_t mode)
+{
+    nvs_handle_t handle;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed for mode save: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    uint8_t value = (uint8_t)mode;
+
+    ret = nvs_set_u8(handle, NVS_KEY_MODE, value);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Display mode saved: %d", value);
+    } else {
+        ESP_LOGE(TAG, "Display mode save failed: %s", esp_err_to_name(ret));
+    }
+}
+
+static display_mode_t load_display_mode(void)
+{
+    nvs_handle_t handle;
+    uint8_t value = MODE_1;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No saved display mode, using MODE_1");
+        return MODE_1;
+    }
+
+    ret = nvs_get_u8(handle, NVS_KEY_MODE, &value);
+    nvs_close(handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Display mode not found, using MODE_1");
+        return MODE_1;
+    }
+
+    if (value < MODE_1 || value > MODE_ROTATION) {
+        value = MODE_1;
+    }
+
+    ESP_LOGI(TAG, "Display mode loaded: %d", value);
+
+    return (display_mode_t)value;
+}
+
+static void save_brightness_level(int level)
+{
+    if (level < 1) {
+        level = 1;
+    }
+
+    if (level > 10) {
+        level = 10;
+    }
+
+    nvs_handle_t handle;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed for brightness save: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    uint8_t value = (uint8_t)level;
+
+    ret = nvs_set_u8(handle, NVS_KEY_BRIGHTNESS, value);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Brightness saved: %d", value);
+    } else {
+        ESP_LOGE(TAG, "Brightness save failed: %s", esp_err_to_name(ret));
+    }
+}
+
+static int load_brightness_level(void)
+{
+    nvs_handle_t handle;
+    uint8_t value = 5;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No saved brightness, using default 5");
+        return 5;
+    }
+
+    ret = nvs_get_u8(handle, NVS_KEY_BRIGHTNESS, &value);
+    nvs_close(handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Brightness not found, using default 5");
+        return 5;
+    }
+
+    if (value < 1 || value > 10) {
+        value = 5;
+    }
+
+    ESP_LOGI(TAG, "Brightness loaded: %d", value);
+
+    return value;
+}
+
+//====================================================================================================
+
+
+
+static void save_menu_values(ds3231_dev_t *rtc)
+{
+    if (!rtc) {
+        return;
+    }
+
+    tmp_time.second = 0;
+    update_tmp_weekday();
+
+    esp_err_t ret = ds3231_set_time(rtc, &tmp_time);
+
+	if (ret == ESP_OK) {
+	    portENTER_CRITICAL(&g_data_mux);
+	    g_now = tmp_time;
+	    g_rtc_valid = true;
+	    portEXIT_CRITICAL(&g_data_mux);
+
+	    brightness_level = temporal_brightness;
+	    driver.set_brightness(brightness_level_to_hub75(brightness_level));
+	    save_brightness_level(brightness_level);
+
+	    show_temp_message("GUARDADO", 1000);
+	    ESP_LOGI(TAG, "RTC time and brightness saved");
+	} else {
+        show_temp_message("ERROR", 1000);
+        ESP_LOGE(TAG, "Failed to save RTC time: %s", esp_err_to_name(ret));
+    }
+
+    exit_menu();
+}
+
+
+
+
+
 static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
 {    
 	refresh_menu_timeout();
 	
 	switch (menu_state)
     {
+		case MENU_BRIGHTNESS:
+		{
+		    if (btn == BTN_UP && temporal_brightness < 10) {
+		        temporal_brightness++;
+		        driver.set_brightness(brightness_level_to_hub75(temporal_brightness));
+		    }
+
+		    if (btn == BTN_DOWN && temporal_brightness > 1) {
+		        temporal_brightness--;
+		        driver.set_brightness(brightness_level_to_hub75(temporal_brightness));
+		    }
+
+		    if (btn == BTN_MENU) {
+		        menu_state = MENU_HOUR;
+		    }
+
+		    break;
+		}
+		
         case MENU_HOUR:
             if (btn == BTN_UP) {
                 tmp_time.hour = (tmp_time.hour + 1) % 24;
@@ -1044,6 +1302,12 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
 }
 
 
+
+
+
+
+
+
 void button_task(void *arg)
 {
     ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
@@ -1081,56 +1345,65 @@ void button_task(void *arg)
                     enter_menu(rtc);
                     break;
 
-                case BTN_UP:
-                {
-                    display_mode_t new_mode;
+					case BTN_UP:
+					{
+					    display_mode_t new_mode;
 
-                    portENTER_CRITICAL(&g_data_mux);
+					    portENTER_CRITICAL(&g_data_mux);
 
-                    if (display_mode >= MODE_ROTATION) {
-                        display_mode = MODE_1;
-                    } else {
-                        display_mode = (display_mode_t)(display_mode + 1);
-                    }
+					    if (display_mode >= MODE_ROTATION) {
+					        display_mode = MODE_1;
+					    } else {
+					        display_mode = (display_mode_t)(display_mode + 1);
+					    }
 
-                    new_mode = display_mode;
+					    new_mode = display_mode;
 
-                    rotation_last_change_us = 0;
-                    rotation_screen = MODE_1;
+					    rotation_last_change_us = 0;
+					    rotation_screen = MODE_1;
 
-                    portEXIT_CRITICAL(&g_data_mux);
+					    portEXIT_CRITICAL(&g_data_mux);
 
-                    scroll_stop();
+					    save_display_mode(new_mode);
 
-                    char msg[16];
-                    snprintf(msg, sizeof(msg), "MODO:%d", new_mode);
-                    show_temp_message(msg, 1000);
+					    scroll_stop();
 
-                    ESP_LOGI(TAG, "Display mode changed to %d", new_mode);
+					    char msg[16];
+					    snprintf(msg, sizeof(msg), "MODO:%d", new_mode);
+					    show_temp_message(msg, 1000);
 
-                    break;
-                }
+					    ESP_LOGI(TAG, "Display mode changed to %d", new_mode);
 
-                case BTN_DOWN:
-                {
-                    portENTER_CRITICAL(&g_data_mux);
+					    break;
+					}
 
-                    if (clock_format == FORMAT_12H) {
-                        clock_format = FORMAT_24H;
-                    } else {
-                        clock_format = FORMAT_12H;
-                    }
+					case BTN_DOWN:
+					{
+					    hour_format_t new_format;
 
-                    hour_format_t new_format = clock_format;
+					    portENTER_CRITICAL(&g_data_mux);
 
-                    portEXIT_CRITICAL(&g_data_mux);
+					    if (clock_format == FORMAT_12H) {
+					        clock_format = FORMAT_24H;
+					    } else {
+					        clock_format = FORMAT_12H;
+					    }
 
-                    ESP_LOGI(TAG,
-                             "Clock format changed to %s",
-                             new_format == FORMAT_24H ? "24H" : "12H");
+					    new_format = clock_format;
 
-                    break;
-                }
+					    portEXIT_CRITICAL(&g_data_mux);
+
+					    save_clock_format(new_format);
+
+					    show_temp_message(new_format == FORMAT_24H ? "24HRS:ON" : "24HRS:OFF",
+					                      1000);
+
+					    ESP_LOGI(TAG,
+					             "Clock format changed to %s",
+					             new_format == FORMAT_24H ? "24H" : "12H");
+
+					    break;
+					}
 
                 default:
                     break;
@@ -1138,6 +1411,10 @@ void button_task(void *arg)
         }
     }
 }
+
+
+
+
 
 
 
@@ -1152,6 +1429,35 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Driver start failed");
         return;
     }
+	
+	ESP_ERROR_CHECK(init_nvs_settings());
+
+	clock_format = load_clock_format();
+	display_mode = load_display_mode();
+	
+	
+	
+	
+	brightness_level = load_brightness_level();
+
+	if (brightness_level < 1) {
+	    brightness_level = 1;
+	}
+
+	if (brightness_level > 10) {
+	    brightness_level = 10;
+	}
+
+	temporal_brightness = brightness_level;
+
+	driver.set_brightness(brightness_level_to_hub75(brightness_level));
+	
+	
+	
+	
+	
+	
+	
 
     static ds18b20_t ambient_sensor;
     static ds3231_dev_t rtc;
