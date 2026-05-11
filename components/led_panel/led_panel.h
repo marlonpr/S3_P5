@@ -42,6 +42,13 @@ bool scroll_is_active(void);
 
 void scroll_update(Hub75Driver& drv);
 
+void draw_bitmap_rgb32(Hub75Driver& drv,
+                       int x,
+                       int y,
+                       const uint32_t *bitmap,
+                       int width,
+                       int height);
+
 #ifdef __cplusplus
 }
 #endif

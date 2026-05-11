@@ -221,3 +221,30 @@ void scroll_update(Hub75Driver& drv)
         scroll_state.active = false;
     }
 }
+
+void draw_bitmap_rgb32(Hub75Driver& drv,
+                       int x,
+                       int y,
+                       const uint32_t *bitmap,
+                       int width,
+                       int height)
+{
+    if (!bitmap) {
+        return;
+    }
+
+    for (int py = 0; py < height; py++) {
+        for (int px = 0; px < width; px++) {
+            uint32_t color = bitmap[py * width + px];
+
+            /*
+             * Assumes format: 0x00RRGGBB or 0xRRGGBB
+             */
+            uint8_t r = (color >> 16) & 0xFF;
+            uint8_t g = (color >> 8)  & 0xFF;
+            uint8_t b =  color        & 0xFF;
+
+            drv.set_pixel(x + px, y + py, r, g, b);
+        }
+    }
+}

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "clock_settings.cpp"
+    SRCS "main.cpp" "clock_settings.cpp" "clock_buttons.cpp" "clock_display.cpp" "clock_menu.cpp"
     INCLUDE_DIRS "."
     REQUIRES led_panel DS3231 DS18B20 nvs_flash
 )
