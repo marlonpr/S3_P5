@@ -247,7 +247,7 @@ void clock_display_draw_mode_1(Hub75Driver *driver,
                  second);
     }
 
-    draw_string(*driver, 8, 2, line1, 0, 255, 255);
+    draw_string(*driver, 1, 1, line1, 255, 255, 255);
 
     uint8_t r_temp = 255;
     uint8_t g_temp = 255;
@@ -257,19 +257,9 @@ void clock_display_draw_mode_1(Hub75Driver *driver,
     make_temp_text(line2, sizeof(line2), temp_c, temp_valid);
 
     if (temp_valid) {
-        draw_string(*driver, 2, 22, line2, r_temp, g_temp, b_temp);
+        draw_string(*driver, 20, 22, line2, r_temp, g_temp, b_temp);
     } else {
-        draw_string(*driver, 2, 22, "T E", 255, 0, 0);
-    }
-
-    if (format == FORMAT_12H) {
-        if (time->hour >= 12) {
-            draw_string(*driver, 51, 22, "PM", 255, 255, 255);
-        } else {
-            draw_string(*driver, 51, 22, "AM", 255, 255, 255);
-        }
-    } else {
-        draw_string(*driver, 51, 22, "24", 255, 255, 255);
+        draw_string(*driver, 20, 22, "T E", 255, 0, 0);
     }
 }
 
@@ -391,3 +381,18 @@ void clock_display_draw_startup(Hub75Driver *driver,
     draw_string(*driver, clock_display_center_x_5x7(line2), 11, line2, 0, 255, 0);
     draw_string(*driver, clock_display_center_x_5x7(line3), 22, line3, 0, 255, 255);
 }
+
+
+
+//==== mode 1 test===
+/*
+if (format == FORMAT_12H) {
+    if (time->hour >= 12) {
+        draw_string(*driver, 51, 22, "PM", 255, 255, 255);
+    } else {
+        draw_string(*driver, 51, 22, "AM", 255, 255, 255);
+    }
+} else {
+    draw_string(*driver, 51, 22, "24", 255, 255, 255);
+}
+*/

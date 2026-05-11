@@ -3,7 +3,7 @@
 #include "freertos/task.h"
 
 #include "led_panel.h"
-#include "font5x7.h"
+#include "font6x9.h"
 
 Hub75Config make_config()
 {
@@ -53,6 +53,46 @@ Hub75Config make_config()
 // Existing draw_char()
 // ======================================================
 
+/*
+int draw_char_2(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable,
+              uint8_t bg_r,
+              uint8_t bg_g,
+              uint8_t bg_b)
+{
+    if (ch < FONT5x7_FIRST || ch > FONT5x7_LAST) { 					// adjust size for different font
+        ch = '?';
+    }
+
+    const uint8_t* glyph = FONT5x7[ch - FONT5x7_FIRST]; 			// adjust size for different font 8, 16 or 32
+
+    for (int col = 0; col < FONT5x7_CHAR_W; col++) {				// adjust size for different font
+        uint8_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
+
+        for (int row = 0; row < FONT5x7_CHAR_H; row++) {			// adjust size for different font
+            if (bits & (1 << row)) {								// adjust size for different font,16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
+                drv.set_pixel(x + col, y + row, r, g, b);
+            } else if (bg_enable) {
+                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
+            }
+        }
+    }
+
+    if (bg_enable) {
+        for (int row = 0; row < FONT5x7_CHAR_H; row++) {				// adjust size for different font
+            drv.set_pixel(x + FONT5x7_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
+        }
+    }
+
+    return FONT5x7_CHAR_W + FONT5x7_SPACING;								// adjust size for different font
+}
+
+*/
+
+
 int draw_char(Hub75Driver& drv,
               int x, int y,
               char ch,
@@ -62,17 +102,17 @@ int draw_char(Hub75Driver& drv,
               uint8_t bg_g,
               uint8_t bg_b)
 {
-    if (ch < FONT5x7_FIRST || ch > FONT5x7_LAST) {
+    if (ch < FONT6x9_FIRST || ch > FONT6x9_LAST) {
         ch = '?';
     }
 
-    const uint8_t* glyph = FONT5x7[ch - FONT5x7_FIRST];
+    const uint16_t* glyph = FONT6x9[ch - FONT6x9_FIRST]; // adjust size for different font 8, 16 or 32
 
-    for (int col = 0; col < FONT5x7_CHAR_W; col++) {
-        uint8_t bits = glyph[col];
+    for (int col = 0; col < FONT6x9_CHAR_W; col++) {
+        uint16_t bits = glyph[col];						// adjust size for different font 8, 16 or 32
 
-        for (int row = 0; row < FONT5x7_CHAR_H; row++) {
-            if (bits & (1 << row)) {
+        for (int row = 0; row < FONT6x9_CHAR_H; row++) {
+            if (bits & (1U << row)) {   					// adjust size for different font,16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
                 drv.set_pixel(x + col, y + row, r, g, b);
             } else if (bg_enable) {
                 drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
@@ -81,17 +121,55 @@ int draw_char(Hub75Driver& drv,
     }
 
     if (bg_enable) {
-        for (int row = 0; row < FONT5x7_CHAR_H; row++) {
-            drv.set_pixel(x + FONT5x7_CHAR_W, y + row, bg_r, bg_g, bg_b);
+        for (int row = 0; row < FONT6x9_CHAR_H; row++) {
+            drv.set_pixel(x + FONT6x9_CHAR_W, y + row, bg_r, bg_g, bg_b);
         }
     }
 
-    return FONT5x7_CHAR_W + FONT5x7_SPACING;
+    return FONT6x9_CHAR_W + FONT6x9_SPACING;
 }
 
+
+
+
+
+
 // ======================================================
-// Existing draw_string()
 // ======================================================
+
+
+/*
+static int text_pixel_width_2(const char *text)
+{
+    if (!text) {
+        return 0;
+    }
+
+    int len = strlen(text);
+
+    if (len <= 0) {
+        return 0;
+    }
+
+    return len * (FONT5x7_CHAR_W + FONT5x7_SPACING); 		// adjust size for different font 
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 int draw_string(Hub75Driver& drv,
                 int x, int y,
@@ -153,7 +231,7 @@ static int text_pixel_width(const char *text)
         return 0;
     }
 
-    return len * (FONT5x7_CHAR_W + FONT5x7_SPACING);
+    return len * (FONT6x9_CHAR_W + FONT6x9_SPACING);  // adjust size for different font
 }
 
 void scroll_start(const char *text,
