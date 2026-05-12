@@ -29,6 +29,11 @@
 #define BUTTON_REPEAT_DELAY_MS 500
 #define BUTTON_REPEAT_RATE_MS  500
 
+static const int64_t ROTATION_LOGO_INTERVAL_US = 3 * 1000000;   // 3 seconds
+static const int64_t ROTATION_MODE_INTERVAL_US = 21 * 1000000;  // 10 seconds
+
+static const int64_t FIXED_LOGO_INTERVAL_US = 3 * 1000000;   // 3 seconds
+static const int64_t FIXED_MODE_INTERVAL_US = 21 * 1000000;  // 10 seconds
 
 
 // =============================== HUB75 GLOBAL OBJECTS ===============================
@@ -126,8 +131,7 @@ typedef enum {
 static rotation_item_t rotation_item = ROT_ITEM_LOGO;
 static int64_t rotation_last_change_us = 0;
 
-static const int64_t ROTATION_LOGO_INTERVAL_US = 3 * 1000000;   // 3 seconds
-static const int64_t ROTATION_MODE_INTERVAL_US = 10 * 1000000;  // 10 seconds
+
 
 
 // =============================== FIXED MODE LOGO STATE ===============================
@@ -140,8 +144,7 @@ typedef enum {
 static fixed_item_t fixed_item = FIXED_ITEM_LOGO;
 static int64_t fixed_last_change_us = 0;
 
-static const int64_t FIXED_LOGO_INTERVAL_US = 3 * 1000000;   // 3 seconds
-static const int64_t FIXED_MODE_INTERVAL_US = 10 * 1000000;  // 10 seconds
+
 
 
 static void show_temp_message(const char *msg, uint32_t duration_ms)
@@ -420,8 +423,10 @@ void display_update_task(void* pvParameters)
 				    } else {
 				        scroll_stop();
 						clock_display_draw_mode_3(driver,
+						                          &now_copy,
 						                          temp_copy,
-						                          temp_valid_copy);
+						                          temp_valid_copy,
+						                          format_copy);
 				    }
 
 				    break;
@@ -458,8 +463,10 @@ void display_update_task(void* pvParameters)
 					        default:
 					            scroll_stop();
 								clock_display_draw_mode_3(driver,
+								                          &now_copy,
 								                          temp_copy,
-								                          temp_valid_copy);
+								                          temp_valid_copy,
+								                          format_copy);
 					            break;
 					    }
 

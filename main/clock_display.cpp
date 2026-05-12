@@ -215,6 +215,40 @@ static void make_temp_text(char *buf,
     }
 }
 
+
+static int get_weekday_x_position(int weekday_index)
+{
+    /*
+     * Adjust these for your 6x9 font.
+     *
+     * dias_semana:
+     * 0 DOMINGO    7 chars
+     * 1 LUNES      5 chars
+     * 2 MARTES     6 chars
+     * 3 MIERCOLES  9 chars
+     * 4 JUEVES     6 chars
+     * 5 VIERNES    7 chars
+     * 6 SABADO     6 chars
+     *
+     * With 6x9 font, each char advances about 7 px.
+     * Long names cannot truly center on 64 px, so some start at x=0.
+     */
+    switch (weekday_index)
+    {
+        case 0: return 6;   // DOMINGO
+        case 1: return 14;  // LUNES
+        case 2: return 10;  // MARTES
+        case 3: return 0;   // MIERCOLES
+        case 4: return 10;  // JUEVES
+        case 5: return 6;   // VIERNES
+        case 6: return 10;  // SABADO
+        default: return 0;
+    }
+}
+
+
+
+
 // =============================== SCREENS ===============================
 
 void clock_display_draw_mode_1(Hub75Driver *driver,
@@ -344,29 +378,32 @@ void clock_display_draw_mode_2(Hub75Driver *driver,
         pos_hour = 2;
     }
 
-    if (hour < 10) {
-        buf_hour[0] = ' ';
-        buf_hour[1] = '0' + hour;
-        buf_hour[2] = '\0';
+	if (hour < 10) {
+	    buf_hour[0] = '0' + hour;
+	    buf_hour[1] = '\0';
 
-        pos_hour -= 1;
+	    /*
+	     * One-digit hour.
+	     * Adjust these X positions to visually center the full clock.
+	     */
+	    pos_hour -= 1;
 
-        draw_string_10x15(*driver,
-                        pos_hour - 1,
-                        14,
-                        buf_hour,
-                        255,
-                        255,
-                        255);
+	    draw_string_10x15(*driver,
+	                      9 + pos_hour,
+	                      14,
+	                      buf_hour,
+	                      255,
+	                      255,
+	                      255);
 
-        draw_string_10x15(*driver,
-                        27 + pos_hour + 1,
-                        14,
-                        buf_minute,
-                        255,
-                        255,
-                        255);
-    } else {
+	    draw_string_10x15(*driver,
+	                      27 + pos_hour,
+	                      14,
+	                      buf_minute,
+	                      255,
+	                      255,
+	                      255);
+	} else {
         buf_hour[0] = '0' + (hour / 10);
         buf_hour[1] = '0' + (hour % 10);
         buf_hour[2] = '\0';
@@ -406,23 +443,31 @@ void clock_display_draw_mode_2(Hub75Driver *driver,
      * If your symbol font uses "!" as colon, keep "!".
      * Otherwise use ":".
      */
-    if (format == FORMAT_12H) {
-        draw_string_2x9(*driver,
-                        23 + pos_hour,
-                        17,
-                        colon_on ? "!" : " ",
-                        255,
-                        255,
-                        255);
-    } else {
-        draw_string_2x9(*driver,
-                        23 + pos_hour,
-                        17,
-                        "!",
-                        255,
-                        255,
-                        255);
-    }
+	 int colon_x;
+
+	 if (hour < 10) {
+	     colon_x = 22 + pos_hour;
+	 } else {
+	     colon_x = 23 + pos_hour;
+	 }
+
+	 if (format == FORMAT_12H) {
+	     draw_string_2x9(*driver,
+	                     colon_x,
+	                     17,
+	                     colon_on ? "!" : " ",
+	                     255,
+	                     255,
+	                     255);
+	 } else {
+	     draw_string_2x9(*driver,
+	                     colon_x,
+	                     17,
+	                     "!",
+	                     255,
+	                     255,
+	                     255);
+	 }
 
     /*
      * Temperature at lower-right.
@@ -476,15 +521,14 @@ void clock_display_draw_mode_2(Hub75Driver *driver,
 }
 
 void clock_display_draw_mode_3(Hub75Driver *driver,
+                               const ds3231_time_t *time,
                                float temp_c,
-                               bool temp_valid)
+                               bool temp_valid,
+                               hour_format_t format)
 {
-    if (!driver) {
+    if (!driver || !time) {
         return;
     }
-
-    char line1[32];
-    char line2[16];
 
     uint8_t r_temp = 255;
     uint8_t g_temp = 255;
@@ -492,20 +536,100 @@ void clock_display_draw_mode_3(Hub75Driver *driver,
 
     get_temp_color(temp_c, &r_temp, &g_temp, &b_temp);
 
-    snprintf(line1, sizeof(line1), "TEMP");
+    int weekday_index = get_weekday_index(time);
+    int pos_day = get_weekday_x_position(weekday_index);
 
-    if (temp_valid) {
-        make_temp_text(line2, sizeof(line2), temp_c, temp_valid,true);
+    char buf_day[32];
+
+    snprintf(buf_day, sizeof(buf_day), "%s", dias_semana[weekday_index]);
+
+    draw_string(*driver,
+                1 + pos_day,
+                1,
+                buf_day,
+                0,
+                255,
+                0);
+
+    char buf_date[32];
+
+    snprintf(buf_date,
+             sizeof(buf_date),
+             "%02d-%02d-%02d",
+             time->day,
+             time->month,
+             time->year - 2000);
+
+    draw_string(*driver,
+                4,
+                11,
+                buf_date,
+                0,
+                0,
+                255);
+
+    int hour = get_display_hour(time, format);
+    int minute = safe_minute(time);
+    int second = safe_second(time);
+
+    bool colon_on = (second % 2) == 0;
+
+    char buf_time[24];
+
+    if (hour < 10) {
+        snprintf(buf_time,
+                 sizeof(buf_time),
+                 colon_on ? " %1d:%02d" : " %1d %02d",
+                 hour,
+                 minute);
     } else {
-        snprintf(line2, sizeof(line2), "T E");
+        snprintf(buf_time,
+                 sizeof(buf_time),
+                 colon_on ? "%02d:%02d" : "%02d %02d",
+                 hour,
+                 minute);
     }
 
-    draw_string(*driver, clock_display_center_x_5x7(line1), 5, line1, 255, 255, 255);
+    draw_string(*driver,
+                2,
+                22,
+                buf_time,
+                255,
+                255,
+                255);
+
+    char buf_temp[16];
+
+    make_temp_text(buf_temp,
+                   sizeof(buf_temp),
+                   temp_c,
+                   temp_valid,
+                   false);
 
     if (temp_valid) {
-        draw_string(*driver, clock_display_center_x_5x7(line2), 18, line2, r_temp, g_temp, b_temp);
+        draw_string(*driver,
+                    43,
+                    22,
+                    buf_temp,
+                    r_temp,
+                    g_temp,
+                    b_temp);
+					
+		draw_string(*driver,
+		            57,
+		            22,
+		            "*",
+		            r_temp,
+		            g_temp,
+		            b_temp);
     } else {
-        draw_string(*driver, clock_display_center_x_5x7(line2), 18, line2, 255, 0, 0);
+        draw_string(*driver,
+                    43,
+                    22,
+                    "TE",
+                    255,
+                    0,
+                    0);
     }
 }
 

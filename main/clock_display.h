@@ -28,8 +28,10 @@ void clock_display_draw_mode_2(Hub75Driver *driver,
                                hour_format_t format);
 
 void clock_display_draw_mode_3(Hub75Driver *driver,
+                               const ds3231_time_t *time,
                                float temp_c,
-                               bool temp_valid);
+                               bool temp_valid,
+                               hour_format_t format);
 
 void clock_display_draw_logo(Hub75Driver *driver);
 
