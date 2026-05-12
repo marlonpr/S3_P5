@@ -188,7 +188,11 @@ static void get_temp_color(float temp_c, uint8_t *r, uint8_t *g, uint8_t *b)
     }
 }
 
-static void make_temp_text(char *buf, size_t size, float temp_c, bool temp_valid)
+static void make_temp_text(char *buf,
+                           size_t size,
+                           float temp_c,
+                           bool temp_valid,
+                           bool with_c)
 {
     if (!buf || size == 0) {
         return;
@@ -196,9 +200,18 @@ static void make_temp_text(char *buf, size_t size, float temp_c, bool temp_valid
 
     if (temp_valid) {
         int temp_int = (int)temp_c;
-        snprintf(buf, size, "%d*C", temp_int);
+
+        if (with_c) {
+            snprintf(buf, size, "%d*C", temp_int);
+        } else {
+            snprintf(buf, size, "%d", temp_int);
+        }
     } else {
-        snprintf(buf, size, "T E");
+		if (with_c) {
+		    snprintf(buf, size, "-");
+		} else {
+		    snprintf(buf, size, "T E");
+		}
     }
 }
 
@@ -219,21 +232,18 @@ void clock_display_draw_mode_1(Hub75Driver *driver,
 
     static char date_scroll_text[64];
 
-    if (!scroll_is_active()) {
-        clock_display_make_date_scroll_text(time,
-                                            date_scroll_text,
-                                            sizeof(date_scroll_text));
+	clock_display_make_date_scroll_text(time,
+	                                    date_scroll_text,
+	                                    sizeof(date_scroll_text));
 
-        scroll_start(date_scroll_text, 12, 0, 255, 0, 10);
-    }
-
-    scroll_update(*driver);
+	scroll_start_if_needed(date_scroll_text, 12, 0, 255, 0, 10);
+	scroll_update(*driver);
 
     int hour = get_display_hour(time, format);
     int minute = safe_minute(time);
     int second = safe_second(time);
 
-    if (format == FORMAT_12H && hour < 10) {
+    if (hour < 10) {  //if (format == FORMAT_12H &&
         snprintf(line1, sizeof(line1),
                  " %1d:%02d:%02d",
                  hour,
@@ -247,14 +257,14 @@ void clock_display_draw_mode_1(Hub75Driver *driver,
                  second);
     }
 
-    draw_string(*driver, 1, 1, line1, 255, 255, 255);
+    draw_string(*driver, 4, 1, line1, 255, 255, 255);
 
     uint8_t r_temp = 255;
     uint8_t g_temp = 255;
     uint8_t b_temp = 255;
 
     get_temp_color(temp_c, &r_temp, &g_temp, &b_temp);
-    make_temp_text(line2, sizeof(line2), temp_c, temp_valid);
+    make_temp_text(line2, sizeof(line2), temp_c, temp_valid, true);
 
     if (temp_valid) {
         draw_string(*driver, 20, 22, line2, r_temp, g_temp, b_temp);
@@ -265,26 +275,20 @@ void clock_display_draw_mode_1(Hub75Driver *driver,
 
 void clock_display_draw_mode_2(Hub75Driver *driver,
                                const ds3231_time_t *time,
+                               float temp_c,
+                               bool temp_valid,
                                hour_format_t format)
 {
     if (!driver || !time) {
         return;
     }
 
-    char line1[32];
-    char line2[32];
-    char line3[32];
+    char buf_hour[4];
+    char buf_minute[8];
+    char buf_second[8];
+    char buf_temp[20];
 
-    int weekday_index = get_weekday_index(time);
-
-    snprintf(line1, sizeof(line1), "%s", dias_semana[weekday_index]);
-
-    snprintf(line2,
-             sizeof(line2),
-             "%02d-%02d-%02d",
-             time->day,
-             time->month,
-             time->year - 2000);
+    int pos_hour = 0;
 
     int hour = get_display_hour(time, format);
     int minute = safe_minute(time);
@@ -292,23 +296,183 @@ void clock_display_draw_mode_2(Hub75Driver *driver,
 
     bool colon_on = (second % 2) == 0;
 
-    if (format == FORMAT_12H && hour < 10) {
-        snprintf(line3,
-                 sizeof(line3),
-                 colon_on ? " %1d:%02d" : " %1d %02d",
-                 hour,
-                 minute);
+    uint8_t r_temp = 255;
+    uint8_t g_temp = 255;
+    uint8_t b_temp = 255;
+
+    get_temp_color(temp_c, &r_temp, &g_temp, &b_temp);
+
+    /*
+     * Top scrolling date line.
+     * Same behavior as old:
+     * start_date_scroll_if_needed(time, 2, 0, 0, 255, 10);
+     */
+ 
+    static char date_scroll_text[64];
+
+	clock_display_make_date_scroll_text(time,
+	                                    date_scroll_text,
+	                                    sizeof(date_scroll_text));
+
+	scroll_start_if_needed(date_scroll_text, 2, 0, 0, 255, 10);
+	scroll_update(*driver);
+
+    /*
+     * Right-side seconds or AM/PM indicator.
+     *
+     * Old behavior:
+     * - 12H mode: show AM/PM
+     * - 24H mode: show seconds
+     */
+    if (format == FORMAT_12H) {
+        if (time->hour >= 12) {
+            draw_string_5x5(*driver, 51, 16, "&$", 255, 255, 255); // PM
+        } else {
+            draw_string_5x5(*driver, 51, 16, "#$", 255, 255, 255); // AM
+        }
     } else {
-        snprintf(line3,
-                 sizeof(line3),
-                 colon_on ? "%02d:%02d" : "%02d %02d",
-                 hour,
-                 minute);
+        snprintf(buf_second, sizeof(buf_second), "%02d", second);
+        draw_string_5x5(*driver, 51, 16, buf_second, 255, 255, 255);
     }
 
-    draw_string(*driver, clock_display_center_x_5x7(line1), 1, line1, 0, 255, 0);
-    draw_string(*driver, clock_display_center_x_5x7(line2), 11, line2, 0, 0, 255);
-    draw_string(*driver, clock_display_center_x_5x7(line3), 22, line3, 255, 255, 255);
+    /*
+     * Big hour/minute.
+     */
+    snprintf(buf_minute, sizeof(buf_minute), "%02d", minute);
+
+    if ((minute % 10) == 1) {
+        pos_hour = 2;
+    }
+
+    if (hour < 10) {
+        buf_hour[0] = ' ';
+        buf_hour[1] = '0' + hour;
+        buf_hour[2] = '\0';
+
+        pos_hour -= 1;
+
+        draw_string_10x15(*driver,
+                        pos_hour - 1,
+                        14,
+                        buf_hour,
+                        255,
+                        255,
+                        255);
+
+        draw_string_10x15(*driver,
+                        27 + pos_hour + 1,
+                        14,
+                        buf_minute,
+                        255,
+                        255,
+                        255);
+    } else {
+        buf_hour[0] = '0' + (hour / 10);
+        buf_hour[1] = '0' + (hour % 10);
+        buf_hour[2] = '\0';
+
+        if (hour > 19) {
+            pos_hour += 1;
+
+            if ((minute % 10) == 1) {
+                pos_hour -= 1;
+            }
+        }
+
+        draw_string_10x15(*driver,
+                        pos_hour,
+                        14,
+                        buf_hour,
+                        255,
+                        255,
+                        255);
+
+        draw_string_10x15(*driver,
+                        27 + pos_hour,
+                        14,
+                        buf_minute,
+                        255,
+                        255,
+                        255);
+    }
+
+    /*
+     * Colon.
+     *
+     * Old behavior:
+     * - 12H mode: blinking colon
+     * - 24H mode: solid colon
+     *
+     * If your symbol font uses "!" as colon, keep "!".
+     * Otherwise use ":".
+     */
+    if (format == FORMAT_12H) {
+        draw_string_2x9(*driver,
+                        23 + pos_hour,
+                        17,
+                        colon_on ? "!" : " ",
+                        255,
+                        255,
+                        255);
+    } else {
+        draw_string_2x9(*driver,
+                        23 + pos_hour,
+                        17,
+                        "!",
+                        255,
+                        255,
+                        255);
+    }
+
+    /*
+     * Temperature at lower-right.
+     *
+     * Old behavior:
+     * draw_text_6(50, 26, buf_temp, ...)
+     * draw_text_4(57, 26, "#", ...)
+     * draw_text_6(60, 26, "$", ...)
+     *
+     * If your font already has '*' as degree symbol and C as normal C,
+     * just draw "%d*C".
+     */
+    make_temp_text(buf_temp,
+                   sizeof(buf_temp),
+                   temp_c,
+                   temp_valid,false);
+
+    if (temp_valid) {
+        draw_string_3x5(*driver,
+                        50,
+                        26,
+                        buf_temp,
+                        r_temp,
+                        g_temp,
+                        b_temp);
+
+        draw_string_2x9(*driver,
+                        57,
+                        26,
+                        "#",
+                        r_temp,
+                        g_temp,
+                        b_temp);
+						
+		draw_string_3x5(*driver,
+		                60,
+		                26,
+		                "$",
+		                r_temp,
+		                g_temp,
+		                b_temp);
+    } else {
+        draw_string_3x5(*driver,
+                        50,
+                        26,
+                        "--",
+                        255,
+                        0,
+                        0);
+    }
 }
 
 void clock_display_draw_mode_3(Hub75Driver *driver,
@@ -331,7 +495,7 @@ void clock_display_draw_mode_3(Hub75Driver *driver,
     snprintf(line1, sizeof(line1), "TEMP");
 
     if (temp_valid) {
-        make_temp_text(line2, sizeof(line2), temp_c, temp_valid);
+        make_temp_text(line2, sizeof(line2), temp_c, temp_valid,true);
     } else {
         snprintf(line2, sizeof(line2), "T E");
     }
@@ -377,9 +541,9 @@ void clock_display_draw_startup(Hub75Driver *driver,
     snprintf(line3, sizeof(line3), "%s",
              format == FORMAT_24H ? "24HRS:ON" : "24HRS:OFF");
 
-    draw_string(*driver, clock_display_center_x_5x7(line1), 1,  line1, 255, 0, 0);
-    draw_string(*driver, clock_display_center_x_5x7(line2), 11, line2, 0, 255, 0);
-    draw_string(*driver, clock_display_center_x_5x7(line3), 22, line3, 0, 255, 255);
+    draw_string(*driver, 1, 1,  line1, 255, 0, 0);
+    draw_string(*driver, 1, 11, line2, 0, 255, 0);
+    draw_string(*driver, 1, 22, line3, 0, 255, 255);
 }
 
 

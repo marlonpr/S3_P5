@@ -400,10 +400,11 @@ void display_update_task(void* pvParameters)
 				        scroll_stop();
 				        clock_display_draw_logo(driver);
 				    } else {
-				        scroll_stop();
-						clock_display_draw_mode_2(driver,
-						                          &now_copy,
-						                          format_copy);
+				        clock_display_draw_mode_2(driver,
+				                                  &now_copy,
+				                                  temp_copy,
+				                                  temp_valid_copy,
+				                                  format_copy);
 				    }
 
 				    break;
@@ -445,12 +446,13 @@ void display_update_task(void* pvParameters)
 							                          format_copy);
 					            break;
 
-					        case ROT_ITEM_MODE_2:
-					            scroll_stop();
-								clock_display_draw_mode_2(driver,
-								                          &now_copy,
-								                          format_copy);
-					            break;
+							case ROT_ITEM_MODE_2:
+							    clock_display_draw_mode_2(driver,
+							                              &now_copy,
+							                              temp_copy,
+							                              temp_valid_copy,
+							                              format_copy);
+							    break;
 
 					        case ROT_ITEM_MODE_3:
 					        default:

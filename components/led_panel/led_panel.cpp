@@ -3,7 +3,13 @@
 #include "freertos/task.h"
 
 #include "led_panel.h"
+
 #include "font6x9.h"
+#include "font5x5.h"
+#include "font10x15.h"
+#include "font2x9.h"
+#include "font3x5.h"
+
 
 Hub75Config make_config()
 {
@@ -49,50 +55,6 @@ Hub75Config make_config()
     return config;
 }
 
-// ======================================================
-// Existing draw_char()
-// ======================================================
-
-/*
-int draw_char_2(Hub75Driver& drv,
-              int x, int y,
-              char ch,
-              uint8_t r, uint8_t g, uint8_t b,
-              bool bg_enable,
-              uint8_t bg_r,
-              uint8_t bg_g,
-              uint8_t bg_b)
-{
-    if (ch < FONT5x7_FIRST || ch > FONT5x7_LAST) { 					// adjust size for different font
-        ch = '?';
-    }
-
-    const uint8_t* glyph = FONT5x7[ch - FONT5x7_FIRST]; 			// adjust size for different font 8, 16 or 32
-
-    for (int col = 0; col < FONT5x7_CHAR_W; col++) {				// adjust size for different font
-        uint8_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
-
-        for (int row = 0; row < FONT5x7_CHAR_H; row++) {			// adjust size for different font
-            if (bits & (1 << row)) {								// adjust size for different font,16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
-                drv.set_pixel(x + col, y + row, r, g, b);
-            } else if (bg_enable) {
-                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
-            }
-        }
-    }
-
-    if (bg_enable) {
-        for (int row = 0; row < FONT5x7_CHAR_H; row++) {				// adjust size for different font
-            drv.set_pixel(x + FONT5x7_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
-        }
-    }
-
-    return FONT5x7_CHAR_W + FONT5x7_SPACING;								// adjust size for different font
-}
-
-*/
-
-
 int draw_char(Hub75Driver& drv,
               int x, int y,
               char ch,
@@ -128,48 +90,6 @@ int draw_char(Hub75Driver& drv,
 
     return FONT6x9_CHAR_W + FONT6x9_SPACING;
 }
-
-
-
-
-
-
-// ======================================================
-// ======================================================
-
-
-/*
-static int text_pixel_width_2(const char *text)
-{
-    if (!text) {
-        return 0;
-    }
-
-    int len = strlen(text);
-
-    if (len <= 0) {
-        return 0;
-    }
-
-    return len * (FONT5x7_CHAR_W + FONT5x7_SPACING); 		// adjust size for different font 
-}
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 int draw_string(Hub75Driver& drv,
                 int x, int y,
@@ -299,6 +219,347 @@ void scroll_update(Hub75Driver& drv)
         scroll_state.active = false;
     }
 }
+
+
+
+
+
+
+
+void scroll_start_if_needed(const char *text,
+                            int y,
+                            uint8_t r,
+                            uint8_t g,
+                            uint8_t b,
+                            int speed_px_per_sec)
+{
+    if (!text) {
+        return;
+    }
+
+    bool different_text = strcmp(scroll_state.text, text) != 0;
+    bool different_y = scroll_state.y != y;
+    bool different_color =
+        scroll_state.r != r ||
+        scroll_state.g != g ||
+        scroll_state.b != b;
+
+    bool different_speed = scroll_state.speed_px_per_sec != speed_px_per_sec;
+
+    if (!scroll_state.active ||
+        different_text ||
+        different_y ||
+        different_color ||
+        different_speed) {
+        scroll_start(text, y, r, g, b, speed_px_per_sec);
+    }
+}
+
+
+
+
+
+
+
+// ======================================================
+// =========================FONT5X5==============================
+// ======================================================
+
+
+int draw_char_5x5(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable,
+              uint8_t bg_r,
+              uint8_t bg_g,
+              uint8_t bg_b)
+{
+    if (ch < FONT5x5_FIRST || ch > FONT5x5_LAST) { 					// adjust size for different font
+        ch = '?';
+    }
+
+    const uint8_t* glyph = FONT5x5[ch - FONT5x5_FIRST]; 			// adjust size for different font 8, 16 or 32
+
+    for (int col = 0; col < FONT5x5_CHAR_W; col++) {				// adjust size for different font
+        uint8_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
+
+        for (int row = 0; row < FONT5x5_CHAR_H; row++) {			// adjust size for different font
+            if (bits & (1 << row)) {								// adjust size for different font,for 8 use if (bits & (1 << row)) { , 16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
+                drv.set_pixel(x + col, y + row, r, g, b);
+            } else if (bg_enable) {
+                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
+            }
+        }
+    }
+
+    if (bg_enable) {
+        for (int row = 0; row < FONT5x5_CHAR_H; row++) {				// adjust size for different font
+            drv.set_pixel(x + FONT5x5_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
+        }
+    }
+
+    return FONT5x5_CHAR_W + FONT5x5_SPACING;								// adjust size for different font
+	
+	
+						// !! Also modify draw string and for different scrolling modify ->  text_width return len * (FONT6x9_CHAR_W + FONT6x9_SPACING);  !! 		================
+}
+
+int draw_string_5x5(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable,
+                uint8_t bg_r,
+                uint8_t bg_g,
+                uint8_t bg_b)
+{
+    if (!str) {
+        return x;
+    }
+
+    while (*str) {
+        x += draw_char_5x5(drv,
+                       x,
+                       y,
+                       *str++,
+                       r,
+                       g,
+                       b,
+                       bg_enable,
+                       bg_r,
+                       bg_g,
+                       bg_b);
+    }
+
+    return x;
+}
+
+// ======================================================
+// =========================FONT10X15==============================
+// ======================================================
+
+int draw_char_10x15(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable,
+              uint8_t bg_r,
+              uint8_t bg_g,
+              uint8_t bg_b)
+{
+    if (ch < FONT10x15_FIRST || ch > FONT10x15_LAST) { 					// adjust size for different font
+        ch = '?';
+    }
+
+    const uint16_t* glyph = FONT10x15[ch - FONT10x15_FIRST]; 			// adjust size for different font 8, 16 or 32
+
+    for (int col = 0; col < FONT10x15_CHAR_W; col++) {				// adjust size for different font
+        uint16_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
+
+        for (int row = 0; row < FONT10x15_CHAR_H; row++) {			// adjust size for different font
+            if (bits & (1U << row)) {								// adjust size for different font,for 8 use if (bits & (1 << row)) { , 16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
+                drv.set_pixel(x + col, y + row, r, g, b);
+            } else if (bg_enable) {
+                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
+            }
+        }
+    }
+
+    if (bg_enable) {
+        for (int row = 0; row < FONT10x15_CHAR_H; row++) {				// adjust size for different font
+            drv.set_pixel(x + FONT10x15_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
+        }
+    }
+
+    return FONT10x15_CHAR_W + FONT10x15_SPACING;								// adjust size for different font
+	
+	
+						// !! Also modify draw string and for different scrolling modify ->  text_width return len * (FONT6x9_CHAR_W + FONT6x9_SPACING);  !! 		================
+}
+
+
+
+int draw_string_10x15(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable,
+                uint8_t bg_r,
+                uint8_t bg_g,
+                uint8_t bg_b)
+{
+    if (!str) {
+        return x;
+    }
+
+    while (*str) {
+        x += draw_char_10x15(drv,
+                       x,
+                       y,
+                       *str++,
+                       r,
+                       g,
+                       b,
+                       bg_enable,
+                       bg_r,
+                       bg_g,
+                       bg_b);
+    }
+
+    return x;
+}
+
+// ======================================================
+// =========================FONT2X9==============================
+// ======================================================
+
+int draw_char_2x9(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable,
+              uint8_t bg_r,
+              uint8_t bg_g,
+              uint8_t bg_b)
+{
+    if (ch < FONT2x9_FIRST || ch > FONT2x9_LAST) { 					// adjust size for different font
+        ch = '?';
+    }
+
+    const uint16_t* glyph = FONT2x9[ch - FONT2x9_FIRST]; 			// adjust size for different font 8, 16 or 32
+
+    for (int col = 0; col < FONT2x9_CHAR_W; col++) {				// adjust size for different font
+        uint16_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
+
+        for (int row = 0; row < FONT2x9_CHAR_H; row++) {			// adjust size for different font
+            if (bits & (1U << row)) {								// adjust size for different font,for 8 use if (bits & (1 << row)) { , 16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
+                drv.set_pixel(x + col, y + row, r, g, b);
+            } else if (bg_enable) {
+                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
+            }
+        }
+    }
+
+    if (bg_enable) {
+        for (int row = 0; row < FONT2x9_CHAR_H; row++) {				// adjust size for different font
+            drv.set_pixel(x + FONT2x9_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
+        }
+    }
+
+    return FONT2x9_CHAR_W + FONT2x9_SPACING;								// adjust size for different font
+	
+	
+						// !! Also modify draw string and for different scrolling modify ->  text_width return len * (FONT6x9_CHAR_W + FONT6x9_SPACING);  !! 		================
+}
+
+
+
+int draw_string_2x9(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable,
+                uint8_t bg_r,
+                uint8_t bg_g,
+                uint8_t bg_b)
+{
+    if (!str) {
+        return x;
+    }
+
+    while (*str) {
+        x += draw_char_2x9(drv,
+                       x,
+                       y,
+                       *str++,
+                       r,
+                       g,
+                       b,
+                       bg_enable,
+                       bg_r,
+                       bg_g,
+                       bg_b);
+    }
+
+    return x;
+}
+
+
+// ======================================================
+// =========================FONT3X5==============================
+// ======================================================
+
+int draw_char_3x5(Hub75Driver& drv,
+              int x, int y,
+              char ch,
+              uint8_t r, uint8_t g, uint8_t b,
+              bool bg_enable,
+              uint8_t bg_r,
+              uint8_t bg_g,
+              uint8_t bg_b)
+{
+    if (ch < FONT3x5_FIRST || ch > FONT3x5_LAST) { 					// adjust size for different font
+        ch = '?';
+    }
+
+    const uint8_t* glyph = FONT3x5[ch - FONT3x5_FIRST]; 			// adjust size for different font 8, 16 or 32
+
+    for (int col = 0; col < FONT3x5_CHAR_W; col++) {				// adjust size for different font
+        uint8_t bits = glyph[col];									// adjust size for different font 8, 16 or 32
+
+        for (int row = 0; row < FONT3x5_CHAR_H; row++) {			// adjust size for different font
+            if (bits & (1 << row)) {								// adjust size for different font,for 8 use if (bits & (1 << row)) { , 16 use if (bits & (1U << row)) {,  if uint32 use 		if (bits & (1UL << row)) {
+                drv.set_pixel(x + col, y + row, r, g, b);
+            } else if (bg_enable) {
+                drv.set_pixel(x + col, y + row, bg_r, bg_g, bg_b);
+            }
+        }
+    }
+
+    if (bg_enable) {
+        for (int row = 0; row < FONT3x5_CHAR_H; row++) {				// adjust size for different font
+            drv.set_pixel(x + FONT3x5_CHAR_W, y + row, bg_r, bg_g, bg_b);	// adjust size for different font
+        }
+    }
+
+    return FONT3x5_CHAR_W + FONT3x5_SPACING;								// adjust size for different font
+	
+	
+						// !! Also modify draw string and for different scrolling modify ->  text_width return len * (FONT6x9_CHAR_W + FONT6x9_SPACING);  !! 		================
+}
+
+int draw_string_3x5(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable,
+                uint8_t bg_r,
+                uint8_t bg_g,
+                uint8_t bg_b)
+{
+    if (!str) {
+        return x;
+    }
+
+    while (*str) {
+        x += draw_char_3x5(drv,
+                       x,
+                       y,
+                       *str++,
+                       r,
+                       g,
+                       b,
+                       bg_enable,
+                       bg_r,
+                       bg_g,
+                       bg_b);
+    }
+
+    return x;
+}
+
+//=========================================================//===========================================================================
 
 void draw_bitmap_rgb32(Hub75Driver& drv,
                        int x,
