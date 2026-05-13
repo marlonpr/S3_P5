@@ -46,6 +46,8 @@ void clock_display_make_date_scroll_text(const ds3231_time_t *time,
 
 int clock_display_center_x_5x7(const char *text);
 
+int clock_display_center_x_6x9(const char *text);
+
 #ifdef __cplusplus
 }
 #endif

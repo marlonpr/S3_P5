@@ -460,7 +460,7 @@ void clock_menu_draw(Hub75Driver *driver)
             break;
 
         case MENU_YEAR:
-            snprintf(buf, sizeof(buf), "ANO:%02d", s_tmp_time.year - 2000);
+            snprintf(buf, sizeof(buf), "A|O:%02d", s_tmp_time.year - 2000);
             break;
 
         default:
@@ -469,7 +469,7 @@ void clock_menu_draw(Hub75Driver *driver)
     }
 
     draw_string(*driver,
-                clock_display_center_x_5x7(buf),
+                s_menu_state == MENU_BRIGHTNESS ? 1 : clock_display_center_x_6x9(buf),
                 8,
                 buf,
                 255,

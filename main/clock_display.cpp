@@ -106,6 +106,42 @@ int clock_display_center_x_5x7(const char *text)
     return (64 - width) / 2;
 }
 
+
+static int text_width_6x9(const char *text)
+{
+    if (!text) {
+        return 0;
+    }
+
+    int len = 0;
+
+    while (*text++) {
+        len++;
+    }
+
+    return len * 7; // 6 pixels glyph + 1 pixel spacing
+}
+
+int clock_display_center_x_6x9(const char *text)
+{
+    int width = text_width_6x9(text);
+
+    if (width >= 64) {
+        return 0;
+    }
+
+    return (64 - width) / 2;
+}
+
+
+
+
+
+
+
+
+
+
 // =============================== CLOCK / TEMP HELPERS ===============================
 
 static int get_display_hour(const ds3231_time_t *time, hour_format_t format)
@@ -665,9 +701,9 @@ void clock_display_draw_startup(Hub75Driver *driver,
     snprintf(line3, sizeof(line3), "%s",
              format == FORMAT_24H ? "24HRS:ON" : "24HRS:OFF");
 
-    draw_string(*driver, 1, 1,  line1, 255, 0, 0);
-    draw_string(*driver, 1, 11, line2, 0, 255, 0);
-    draw_string(*driver, 1, 22, line3, 0, 255, 255);
+    draw_string_5x7(*driver, clock_display_center_x_5x7(line1), 1,  line1, 255, 0, 0);
+    draw_string_5x7(*driver, clock_display_center_x_5x7(line2), 11, line2, 0, 255, 0);
+    draw_string_5x7(*driver, clock_display_center_x_5x7(line3), 22, line3, 0, 255, 255);
 }
 
 

@@ -359,7 +359,7 @@ void display_update_task(void* pvParameters)
 		}
 
 		if (message_active_copy) {
-		    draw_string(*driver, 8, 8, message_copy, 255, 0, 0);
+		    draw_string(*driver, clock_display_center_x_6x9(message_copy), 8, message_copy, 255, 0, 0);
 		    driver->flip_buffer();
 
 		    vTaskDelayUntil(&xLastWakeTime, xFrequency);

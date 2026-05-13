@@ -27,6 +27,18 @@ int draw_string(Hub75Driver& drv,
                 uint8_t bg_g = 0,
                 uint8_t bg_b = 0);
 				
+//==================== FONT5X7 ===================================================				
+int draw_string_5x7(Hub75Driver& drv,
+                int x, int y,
+                const char* str,
+                uint8_t r, uint8_t g, uint8_t b,
+                bool bg_enable = false,
+                uint8_t bg_r = 0,
+                uint8_t bg_g = 0,
+                uint8_t bg_b = 0);
+				
+				
+				
 //==================== FONT5X5 ===================================================				
 int draw_string_5x5(Hub75Driver& drv,
                 int x, int y,
