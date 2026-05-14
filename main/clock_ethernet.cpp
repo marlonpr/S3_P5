@@ -25,10 +25,7 @@
 #include "lwip/inet.h"
 #include "lwip/ip4_addr.h"
 
-
 #include "driver/gpio.h"
-
-
 
 static const char *TAG = "CLOCK_ETHERNET";
 
@@ -96,6 +93,92 @@ static void got_ip_event_handler(void *arg,
     ESP_LOGI(TAG, "ETHIP: " IPSTR, IP2STR(&ip_info->ip));
     ESP_LOGI(TAG, "ETHMASK: " IPSTR, IP2STR(&ip_info->netmask));
     ESP_LOGI(TAG, "ETHGW: " IPSTR, IP2STR(&ip_info->gw));
+}
+
+static void log_tcp_packet(const uint8_t *data, int len)
+{
+    if (data == NULL || len <= 0) {
+        return;
+    }
+
+    char hex_line[128];
+    char ascii_line[32];
+
+    for (int offset = 0; offset < len; offset += 16) {
+        int chunk_len = len - offset;
+
+        if (chunk_len > 16) {
+            chunk_len = 16;
+        }
+
+        int hex_pos = 0;
+
+        for (int i = 0; i < chunk_len; i++) {
+            hex_pos += snprintf(&hex_line[hex_pos],
+                                sizeof(hex_line) - hex_pos,
+                                "%02X ",
+                                data[offset + i]);
+        }
+
+        for (int i = chunk_len; i < 16; i++) {
+            hex_pos += snprintf(&hex_line[hex_pos],
+                                sizeof(hex_line) - hex_pos,
+                                "   ");
+        }
+
+        for (int i = 0; i < chunk_len; i++) {
+            uint8_t c = data[offset + i];
+
+            if (c >= 32 && c <= 126) {
+                ascii_line[i] = (char)c;
+            } else {
+                ascii_line[i] = '.';
+            }
+        }
+
+        ascii_line[chunk_len] = '\0';
+
+        ESP_LOGI(TAG, "%04X  %-48s  |%s|", offset, hex_line, ascii_line);
+    }
+}
+
+static bool send_protocol_ack(int client_sock, const uint8_t *rx, int len)
+{
+    if (rx == NULL || len < 6) {
+        return false;
+    }
+
+    /*
+     * Expected command format:
+     * /TA <ID> <CMD1> <CMD2> ... \
+     */
+    if (rx[0] != '/' || rx[1] != 'T' || rx[2] != 'A') {
+        return false;
+    }
+
+    uint8_t id = rx[3];
+    uint8_t cmd1 = rx[4];
+    uint8_t cmd2 = rx[5];
+
+    uint8_t ack[7];
+
+    ack[0] = '/';
+    ack[1] = 't';
+    ack[2] = 'a';
+    ack[3] = id;
+    ack[4] = (uint8_t)(cmd1 + 0x20);  // uppercase to lowercase
+    ack[5] = (uint8_t)(cmd2 + 0x20);  // uppercase to lowercase
+    ack[6] = '\\';
+
+    ESP_LOGI(TAG,
+             "Sending ACK: /ta ID=0x%02X %c%c \\",
+             id,
+             ack[4],
+             ack[5]);
+
+    int sent = send(client_sock, ack, sizeof(ack), 0);
+
+    return sent == sizeof(ack);
 }
 
 // ================= TCP SERVER TASK =================
@@ -179,16 +262,24 @@ static void tcp_server_task(void *pvParameters)
                 break;
             }
 
-            rx_buffer[len] = '\0';
+			
+				ESP_LOGI(TAG, "TCP RX %d bytes", len);
+				log_tcp_packet((const uint8_t *)rx_buffer, len);
+	
+				if (s_rx_callback != NULL) {
+				    s_rx_callback(rx_buffer, len);
+				}
 
-            ESP_LOGI(TAG, "TCP RX %d bytes: '%s'", len, rx_buffer);
-
-            if (s_rx_callback != NULL) {
-                s_rx_callback(rx_buffer, len);
-            }
-
-            const char *ack = "OK\r\n";
-            send(client_sock, ack, strlen(ack), 0);
+				send_protocol_ack(client_sock, (const uint8_t *)rx_buffer, len);			
+				
+				/*
+				 * Important:
+				 * Disable ACK while decoding the existing software protocol.
+				 * Some software expects a specific binary response.
+				 */
+				// const char *ack = "OK\r\n";
+				// send(client_sock, ack, strlen(ack), 0);
+		
         }
 
         shutdown(client_sock, 0);

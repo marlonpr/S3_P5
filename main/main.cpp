@@ -57,6 +57,18 @@ static int64_t g_message_until_us = 0;
 static int brightness_level = 5;        // 1 to 10
 static int temporal_brightness = 5;     // temporary menu value while editing
 
+// =============================== ETHERNET DATA ===============================
+
+static bool g_eth_brightness_pending = false;
+static uint8_t g_eth_brightness_raw = 0;
+
+static bool g_eth_format_pending = false;
+static hour_format_t g_eth_format = FORMAT_12H;
+
+
+// =============================================================================================
+
+
 static uint8_t brightness_level_to_hub75(int level)
 {
     if (level < 1) {
@@ -126,9 +138,6 @@ typedef enum {
 static rotation_item_t rotation_item = ROT_ITEM_LOGO;
 static int64_t rotation_last_change_us = 0;
 
-
-
-
 // =============================== FIXED MODE LOGO STATE ===============================
 
 typedef enum {
@@ -138,9 +147,6 @@ typedef enum {
 
 static fixed_item_t fixed_item = FIXED_ITEM_LOGO;
 static int64_t fixed_last_change_us = 0;
-
-
-
 
 static void show_temp_message(const char *msg, uint32_t duration_ms)
 {
@@ -277,7 +283,75 @@ void display_update_task(void* pvParameters)
 	bool logo_screen_active_copy;
 
     while (true) {
-		clock_menu_check_timeout();
+		clock_menu_check_timeout();	
+		
+		bool eth_brightness_pending_copy = false;
+		uint8_t eth_brightness_raw_copy = 0;
+
+		bool eth_format_pending_copy = false;
+		hour_format_t eth_format_copy = FORMAT_12H;
+
+		portENTER_CRITICAL(&g_data_mux);
+
+		if (g_eth_brightness_pending) {
+		    eth_brightness_pending_copy = true;
+		    eth_brightness_raw_copy = g_eth_brightness_raw;
+		    g_eth_brightness_pending = false;
+		}
+
+		if (g_eth_format_pending) {
+		    eth_format_pending_copy = true;
+		    eth_format_copy = g_eth_format;
+		    g_eth_format_pending = false;
+		}
+
+		portEXIT_CRITICAL(&g_data_mux);
+
+		if (eth_brightness_pending_copy) {
+		    /*
+		     * Apply raw 1-255 brightness from Ethernet directly to HUB75.
+		     */
+		    driver->set_brightness(eth_brightness_raw_copy);
+
+		    /*
+		     * Convert 1-255 to your local menu scale 1-10.
+		     * Rounded upward enough so very low brightness does not become 0.
+		     */
+		    int new_level = ((int)eth_brightness_raw_copy * 10 + 254) / 255;
+
+		    if (new_level < 1) {
+		        new_level = 1;
+		    }
+
+		    if (new_level > 10) {
+		        new_level = 10;
+		    }
+
+		    portENTER_CRITICAL(&g_data_mux);
+		    brightness_level = new_level;
+		    temporal_brightness = new_level;
+		    portEXIT_CRITICAL(&g_data_mux);
+
+		    clock_settings_save_brightness(new_level);
+
+		    ESP_LOGI(TAG,
+		             "Brightness applied from Ethernet: raw=%u level=%d",
+		             eth_brightness_raw_copy,
+		             new_level);
+		}
+
+		if (eth_format_pending_copy) {
+		    portENTER_CRITICAL(&g_data_mux);
+		    clock_format = eth_format_copy;
+		    portEXIT_CRITICAL(&g_data_mux);
+
+		    clock_settings_save_format((uint8_t)eth_format_copy);
+
+		    ESP_LOGI(TAG,
+		             "Clock format applied from Ethernet: %s",
+		             eth_format_copy == FORMAT_24H ? "24H" : "12H");
+		}
+
 		
 		ds3231_time_t now_copy;
 		float temp_copy;
@@ -697,8 +771,7 @@ void button_task(void *arg)
 		     pending_hold_start = now;
 
 		     ESP_LOGI(TAG, "Button %d pressed, waiting for hold", btn);
-		 }
-		 
+		 }	 
 		 
 		 
 		 /*
@@ -725,8 +798,7 @@ void button_task(void *arg)
 		     {
 		         menu_repeat_btn = BTN_NONE;
 		     }
-		 }
-		 
+		 } 
 		 
 		 
 
@@ -899,17 +971,76 @@ static void check_or_set_default_rtc(ds3231_dev_t *rtc)
 
 static void ethernet_rx_callback(const char *data, int len)
 {
-    ESP_LOGI(TAG, "Command from Ethernet: '%.*s'", len, data);
+    const uint8_t *p = (const uint8_t *)data;
+
+    ESP_LOGI(TAG, "Command from Ethernet received: %d bytes", len);
 
     /*
-     * Later you can parse commands here:
-     * MSG:HOLA
-     * MODE:2
-     * BRIGHT:5
-     * TIME:2026-05-14 09:30:00
+     * Ignore keep-alive / poll.
      */
-}
+    if (len == 3 &&
+        p[0] == 0x00 &&
+        p[1] == 0x00 &&
+        p[2] == 0x00) {
+        ESP_LOGI(TAG, "Ethernet keep-alive / poll received");
+        return;
+    }
 
+    /*
+     * CT command:
+     * /TA <ID> CT <Formato2412> <Intensidad_Luminosa> \
+     */
+    if (len == 9 &&
+        p[0] == '/' &&
+        p[1] == 'T' &&
+        p[2] == 'A' &&
+        p[4] == 'C' &&
+        p[5] == 'T' &&
+        p[8] == '\\') {
+
+        uint8_t board_id = p[3];
+        uint8_t format_2412 = p[6];
+        uint8_t intensity = p[7];
+
+        ESP_LOGI(TAG,
+                 "CT command: id=%u format=%u intensity=%u",
+                 board_id,
+                 format_2412,
+                 intensity);
+
+        /*
+         * Optional: accept only board ID 0 for now.
+         */
+        if (board_id != 0x00) {
+            ESP_LOGW(TAG, "Ignoring CT command for different board ID: %u", board_id);
+            return;
+        }
+
+        hour_format_t new_format = (format_2412 == 0) ? FORMAT_12H : FORMAT_24H;
+
+        /*
+         * Avoid full-off brightness unless you really want the panel invisible.
+         * The protocol says 0-255, but your software seems to send min=1.
+         */
+        if (intensity < 1) {
+            intensity = 1;
+        }
+
+        portENTER_CRITICAL(&g_data_mux);
+
+        g_eth_brightness_raw = intensity;
+        g_eth_brightness_pending = true;
+
+        g_eth_format = new_format;
+        g_eth_format_pending = true;
+
+        portEXIT_CRITICAL(&g_data_mux);
+
+        return;
+    }
+
+    ESP_LOGW(TAG, "Unknown Ethernet command");
+}
 
 // =============================== APP MAIN ===============================
 
