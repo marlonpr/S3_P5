@@ -11,292 +11,10 @@
 #include "ds18b20.h"
 
 #include "clock_display.h"
-
 #include "clock_settings.h"
-
 #include "clock_buttons.h"
-
 #include "clock_menu.h"
-
-
-
-
-
-static const char* TAG = "MAIN";
-
-
-#include "driver/gpio.h"
-
-#include "esp_mac.h"
-
-#include "lwip/ip4_addr.h"
-
-
-
-
-
-#include "esp_event.h"
-#include "esp_netif.h"
-#include "esp_eth.h"
-
-#include "driver/spi_master.h"
-
-#include "esp_eth_mac.h"
-#include "esp_eth_phy.h"
-
-#include "esp_eth_mac_w5500.h"
-#include "esp_eth_phy_w5500.h"
-
-#include "lwip/sockets.h"
-#include "lwip/netdb.h"
-#include "lwip/inet.h"
-
-
-
-
-#define ETH_SPI_HOST       SPI2_HOST
-
-#define ETH_MOSI_GPIO      GPIO_NUM_11
-#define ETH_MISO_GPIO      GPIO_NUM_12
-#define ETH_SCLK_GPIO      GPIO_NUM_13
-#define ETH_CS_GPIO        GPIO_NUM_14
-#define ETH_INT_GPIO       GPIO_NUM_10
-#define ETH_RST_GPIO       GPIO_NUM_9
-
-#define ETH_SPI_CLOCK_MHZ  20
-
-
-
-
-
-
-
-
-
-static esp_eth_handle_t s_eth_handle = NULL;
-static esp_netif_t *s_eth_netif = NULL;
-
-static void eth_event_handler(void *arg,
-                              esp_event_base_t event_base,
-                              int32_t event_id,
-                              void *event_data)
-{
-    switch (event_id) {
-        case ETHERNET_EVENT_CONNECTED:
-            ESP_LOGI(TAG, "Ethernet Link Up");
-            break;
-
-        case ETHERNET_EVENT_DISCONNECTED:
-            ESP_LOGW(TAG, "Ethernet Link Down");
-            break;
-
-        case ETHERNET_EVENT_START:
-            ESP_LOGI(TAG, "Ethernet Started");
-            break;
-
-        case ETHERNET_EVENT_STOP:
-            ESP_LOGI(TAG, "Ethernet Stopped");
-            break;
-
-        default:
-            break;
-    }
-}
-
-static void got_ip_event_handler(void *arg,
-                                 esp_event_base_t event_base,
-                                 int32_t event_id,
-                                 void *event_data)
-{
-    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-    const esp_netif_ip_info_t *ip_info = &event->ip_info;
-
-    ESP_LOGI(TAG, "Ethernet Got IP Address");
-    ESP_LOGI(TAG, "ETHIP: " IPSTR, IP2STR(&ip_info->ip));
-    ESP_LOGI(TAG, "ETHMASK: " IPSTR, IP2STR(&ip_info->netmask));
-    ESP_LOGI(TAG, "ETHGW: " IPSTR, IP2STR(&ip_info->gw));
-}
-
-
-
-
-
-
-
-static esp_err_t ethernet_w5500_init(void)
-{
-    ESP_LOGI(TAG, "Initializing W5500 Ethernet");
-	
-	esp_err_t isr_ret = gpio_install_isr_service(0);
-
-	if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE) {
-	    ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(isr_ret));
-	    return isr_ret;
-	}
-
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-    esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
-    s_eth_netif = esp_netif_new(&netif_cfg);
-    if (s_eth_netif == NULL) {
-        ESP_LOGE(TAG, "Failed to create Ethernet netif");
-        return ESP_FAIL;
-    }
-
-    spi_bus_config_t buscfg = {};
-    buscfg.mosi_io_num = ETH_MOSI_GPIO;
-    buscfg.miso_io_num = ETH_MISO_GPIO;
-    buscfg.sclk_io_num = ETH_SCLK_GPIO;
-    buscfg.quadwp_io_num = -1;
-    buscfg.quadhd_io_num = -1;
-
-    ESP_ERROR_CHECK(spi_bus_initialize(ETH_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
-
-    spi_device_interface_config_t devcfg = {};
-    devcfg.command_bits = 16;
-    devcfg.address_bits = 8;
-    devcfg.mode = 0;
-    devcfg.clock_speed_hz = ETH_SPI_CLOCK_MHZ * 1000 * 1000;
-    devcfg.spics_io_num = ETH_CS_GPIO;
-    devcfg.queue_size = 20;
-
-    eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(ETH_SPI_HOST, &devcfg);
-    w5500_config.int_gpio_num = ETH_INT_GPIO;
-
-    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
-    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
-
-    phy_config.phy_addr = 1;
-    phy_config.reset_gpio_num = ETH_RST_GPIO;
-
-    esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
-    esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phy_config);
-
-    esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
-
-    ESP_ERROR_CHECK(esp_eth_driver_install(&eth_config, &s_eth_handle));
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	uint8_t mac_addr[6] = {0};
-
-	ESP_ERROR_CHECK(esp_read_mac(mac_addr, ESP_MAC_WIFI_STA));
-
-	/*
-	 * Convert ESP32 base MAC into a locally administered Ethernet MAC.
-	 * Bit 0 = 0 means unicast.
-	 * Bit 1 = 1 means locally administered.
-	 */
-	mac_addr[0] = (mac_addr[0] & 0xFE) | 0x02;
-
-	ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_S_MAC_ADDR, mac_addr));
-
-	ESP_LOGI(TAG,
-	         "W5500 MAC: %02X:%02X:%02X:%02X:%02X:%02X",
-	         mac_addr[0],
-	         mac_addr[1],
-	         mac_addr[2],
-	         mac_addr[3],
-	         mac_addr[4],
-	         mac_addr[5]);
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-    ESP_ERROR_CHECK(esp_netif_attach(s_eth_netif, esp_eth_new_netif_glue(s_eth_handle)));
-	
-	
-	
-	
-
-	
-		
-	
-	
-	
-	
-	//========================================= USE THI BLOCK FOR STATIC IP AND COMMENT THE BLOCK FOR AUTOMATIC ASSIGN IP BY DHCP =================================//
-	
-	ESP_ERROR_CHECK(esp_netif_dhcpc_stop(s_eth_netif));
-
-	esp_netif_ip_info_t ip_info = {};
-
-	IP4_ADDR(&ip_info.ip,      192, 168, 10, 50);
-	IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
-	IP4_ADDR(&ip_info.gw,      192, 168, 10, 1);
-
-	ESP_ERROR_CHECK(esp_netif_set_ip_info(s_eth_netif, &ip_info));
-
-	ESP_LOGI(TAG, "Static Ethernet IP configured: 192.168.10.50");
-	
-	//============================================================================================================================================================//
-	
-	
-	
-	
-	
-	
-	
-	
-	
-
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT,
-                                               ESP_EVENT_ANY_ID,
-                                               &eth_event_handler,
-                                               NULL));
-
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,
-                                               IP_EVENT_ETH_GOT_IP,
-                                               &got_ip_event_handler,
-                                               NULL));
-
-    ESP_ERROR_CHECK(esp_eth_start(s_eth_handle));
-
-    ESP_LOGI(TAG, "W5500 Ethernet init done");
-
-    return ESP_OK;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#include "clock_ethernet.h"
 
 #define DS18B20_GPIO GPIO_NUM_39
 #define PIN_MENU GPIO_NUM_40
@@ -307,6 +25,8 @@ static esp_err_t ethernet_w5500_init(void)
 #define BUTTON_DEBOUNCE_MS 500
 #define BUTTON_REPEAT_DELAY_MS 500
 #define BUTTON_REPEAT_RATE_MS  500
+
+static const char* TAG = "MAIN";
 
 static const int64_t ROTATION_LOGO_INTERVAL_US = 3 * 1000000;   // 3 seconds
 static const int64_t ROTATION_MODE_INTERVAL_US = 21 * 1000000;  // 10 seconds
@@ -326,10 +46,6 @@ static int64_t g_startup_screen_until_us = 0;
 
 static bool g_logo_screen_active = true;
 static int64_t g_logo_screen_until_us = 0;
-
-
-
-
 
 // =============================== SHARED DATA ===============================
 
@@ -1181,141 +897,28 @@ static void check_or_set_default_rtc(ds3231_dev_t *rtc)
     }
 }
 
-
-
-
-
-
-#define TCP_SERVER_PORT 5000
-
-static void tcp_server_task(void *pvParameters)
+static void ethernet_rx_callback(const char *data, int len)
 {
-    char rx_buffer[128];
+    ESP_LOGI(TAG, "Command from Ethernet: '%.*s'", len, data);
 
-    struct sockaddr_in server_addr = {};
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(TCP_SERVER_PORT);
-
-    int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if (listen_sock < 0) {
-        ESP_LOGE(TAG, "Unable to create TCP socket: errno %d", errno);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    int opt = 1;
-    setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    int err = bind(listen_sock,
-                   (struct sockaddr *)&server_addr,
-                   sizeof(server_addr));
-
-    if (err != 0) {
-        ESP_LOGE(TAG, "Socket bind failed: errno %d", errno);
-        close(listen_sock);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    err = listen(listen_sock, 1);
-    if (err != 0) {
-        ESP_LOGE(TAG, "Socket listen failed: errno %d", errno);
-        close(listen_sock);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "TCP server listening on port %d", TCP_SERVER_PORT);
-
-    while (true) {
-        struct sockaddr_in client_addr = {};
-        socklen_t client_addr_len = sizeof(client_addr);
-
-        ESP_LOGI(TAG, "Waiting for TCP client...");
-
-        int client_sock = accept(listen_sock,
-                                 (struct sockaddr *)&client_addr,
-                                 &client_addr_len);
-
-        if (client_sock < 0) {
-            ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
-            continue;
-        }
-
-        ESP_LOGI(TAG,
-                 "TCP client connected from %s:%d",
-                 inet_ntoa(client_addr.sin_addr),
-                 ntohs(client_addr.sin_port));
-
-        const char *welcome = "ESP32-S3 TCP server ready\r\n";
-        send(client_sock, welcome, strlen(welcome), 0);
-
-        while (true) {
-            int len = recv(client_sock,
-                           rx_buffer,
-                           sizeof(rx_buffer) - 1,
-                           0);
-
-            if (len < 0) {
-                ESP_LOGE(TAG, "recv failed: errno %d", errno);
-                break;
-            }
-
-            if (len == 0) {
-                ESP_LOGI(TAG, "TCP client disconnected");
-                break;
-            }
-
-            rx_buffer[len] = '\0';
-
-            ESP_LOGI(TAG, "TCP RX %d bytes: '%s'", len, rx_buffer);
-
-            /*
-             * Optional echo back to Hercules.
-             */
-            send(client_sock, rx_buffer, len, 0);
-        }
-
-        shutdown(client_sock, 0);
-        close(client_sock);
-    }
+    /*
+     * Later you can parse commands here:
+     * MSG:HOLA
+     * MODE:2
+     * BRIGHT:5
+     * TIME:2026-05-14 09:30:00
+     */
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // =============================== APP MAIN ===============================
 
 extern "C" void app_main(void)
-{
-    
+{  
 	
-	
-	
-	
-	ESP_LOGI(TAG, "Starting Ethernet test");
-
-	ESP_ERROR_CHECK(ethernet_w5500_init());
-	
-	
-	
-	
-	
-	
-	
-	
-	
+	ESP_LOGI(TAG, "Starting Ethernet");
+	ESP_ERROR_CHECK(clock_ethernet_init_static());
+	ESP_ERROR_CHECK(clock_ethernet_start_tcp_server(ethernet_rx_callback));	
 	
 	ESP_LOGI(TAG, "Starting HUB75");
 
@@ -1424,14 +1027,4 @@ extern "C" void app_main(void)
         NULL,
         0
     );
-	
-	xTaskCreatePinnedToCore(
-	    tcp_server_task,
-	    "TcpServerTask",
-	    4096,
-	    NULL,
-	    4,
-	    NULL,
-	    0
-	);
 }
