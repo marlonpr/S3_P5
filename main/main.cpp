@@ -25,7 +25,11 @@
 static const char* TAG = "MAIN";
 
 
+#include "driver/gpio.h"
 
+#include "esp_mac.h"
+
+#include "lwip/ip4_addr.h"
 
 
 
@@ -42,6 +46,10 @@ static const char* TAG = "MAIN";
 
 #include "esp_eth_mac_w5500.h"
 #include "esp_eth_phy_w5500.h"
+
+#include "lwip/sockets.h"
+#include "lwip/netdb.h"
+#include "lwip/inet.h"
 
 
 
@@ -118,6 +126,13 @@ static void got_ip_event_handler(void *arg,
 static esp_err_t ethernet_w5500_init(void)
 {
     ESP_LOGI(TAG, "Initializing W5500 Ethernet");
+	
+	esp_err_t isr_ret = gpio_install_isr_service(0);
+
+	if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE) {
+	    ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(isr_ret));
+	    return isr_ret;
+	}
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -161,7 +176,85 @@ static esp_err_t ethernet_w5500_init(void)
     esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
 
     ESP_ERROR_CHECK(esp_eth_driver_install(&eth_config, &s_eth_handle));
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	uint8_t mac_addr[6] = {0};
+
+	ESP_ERROR_CHECK(esp_read_mac(mac_addr, ESP_MAC_WIFI_STA));
+
+	/*
+	 * Convert ESP32 base MAC into a locally administered Ethernet MAC.
+	 * Bit 0 = 0 means unicast.
+	 * Bit 1 = 1 means locally administered.
+	 */
+	mac_addr[0] = (mac_addr[0] & 0xFE) | 0x02;
+
+	ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_S_MAC_ADDR, mac_addr));
+
+	ESP_LOGI(TAG,
+	         "W5500 MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+	         mac_addr[0],
+	         mac_addr[1],
+	         mac_addr[2],
+	         mac_addr[3],
+	         mac_addr[4],
+	         mac_addr[5]);
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
     ESP_ERROR_CHECK(esp_netif_attach(s_eth_netif, esp_eth_new_netif_glue(s_eth_handle)));
+	
+	
+	
+	
+
+	
+		
+	
+	
+	
+	
+	//========================================= USE THI BLOCK FOR STATIC IP AND COMMENT THE BLOCK FOR AUTOMATIC ASSIGN IP BY DHCP =================================//
+	
+	ESP_ERROR_CHECK(esp_netif_dhcpc_stop(s_eth_netif));
+
+	esp_netif_ip_info_t ip_info = {};
+
+	IP4_ADDR(&ip_info.ip,      192, 168, 10, 50);
+	IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+	IP4_ADDR(&ip_info.gw,      192, 168, 10, 1);
+
+	ESP_ERROR_CHECK(esp_netif_set_ip_info(s_eth_netif, &ip_info));
+
+	ESP_LOGI(TAG, "Static Ethernet IP configured: 192.168.10.50");
+	
+	//============================================================================================================================================================//
+	
+	
+	
+	
+	
+	
+	
+	
+	
 
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT,
                                                ESP_EVENT_ANY_ID,
@@ -1089,6 +1182,119 @@ static void check_or_set_default_rtc(ds3231_dev_t *rtc)
 }
 
 
+
+
+
+
+#define TCP_SERVER_PORT 5000
+
+static void tcp_server_task(void *pvParameters)
+{
+    char rx_buffer[128];
+
+    struct sockaddr_in server_addr = {};
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(TCP_SERVER_PORT);
+
+    int listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (listen_sock < 0) {
+        ESP_LOGE(TAG, "Unable to create TCP socket: errno %d", errno);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    int err = bind(listen_sock,
+                   (struct sockaddr *)&server_addr,
+                   sizeof(server_addr));
+
+    if (err != 0) {
+        ESP_LOGE(TAG, "Socket bind failed: errno %d", errno);
+        close(listen_sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    err = listen(listen_sock, 1);
+    if (err != 0) {
+        ESP_LOGE(TAG, "Socket listen failed: errno %d", errno);
+        close(listen_sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "TCP server listening on port %d", TCP_SERVER_PORT);
+
+    while (true) {
+        struct sockaddr_in client_addr = {};
+        socklen_t client_addr_len = sizeof(client_addr);
+
+        ESP_LOGI(TAG, "Waiting for TCP client...");
+
+        int client_sock = accept(listen_sock,
+                                 (struct sockaddr *)&client_addr,
+                                 &client_addr_len);
+
+        if (client_sock < 0) {
+            ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
+            continue;
+        }
+
+        ESP_LOGI(TAG,
+                 "TCP client connected from %s:%d",
+                 inet_ntoa(client_addr.sin_addr),
+                 ntohs(client_addr.sin_port));
+
+        const char *welcome = "ESP32-S3 TCP server ready\r\n";
+        send(client_sock, welcome, strlen(welcome), 0);
+
+        while (true) {
+            int len = recv(client_sock,
+                           rx_buffer,
+                           sizeof(rx_buffer) - 1,
+                           0);
+
+            if (len < 0) {
+                ESP_LOGE(TAG, "recv failed: errno %d", errno);
+                break;
+            }
+
+            if (len == 0) {
+                ESP_LOGI(TAG, "TCP client disconnected");
+                break;
+            }
+
+            rx_buffer[len] = '\0';
+
+            ESP_LOGI(TAG, "TCP RX %d bytes: '%s'", len, rx_buffer);
+
+            /*
+             * Optional echo back to Hercules.
+             */
+            send(client_sock, rx_buffer, len, 0);
+        }
+
+        shutdown(client_sock, 0);
+        close(client_sock);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // =============================== APP MAIN ===============================
 
 extern "C" void app_main(void)
@@ -1218,4 +1424,14 @@ extern "C" void app_main(void)
         NULL,
         0
     );
+	
+	xTaskCreatePinnedToCore(
+	    tcp_server_task,
+	    "TcpServerTask",
+	    4096,
+	    NULL,
+	    4,
+	    NULL,
+	    0
+	);
 }

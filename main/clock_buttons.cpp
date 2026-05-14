@@ -84,12 +84,16 @@ esp_err_t clock_buttons_init(gpio_num_t menu_pin,
         return ESP_ERR_NO_MEM;
     }
 
-    ret = gpio_install_isr_service(0);
-
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+	//============ THIS IS ALREADY INSTALLED IN ETHERNET INIT =====================
+	/*
+	ret = gpio_install_isr_service(0);
+	
+	if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+	    ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(ret));
+	    return ret;
+	}
+	*/
+	//=========================================================================
 
     ret = gpio_isr_handler_add(s_pin_menu,
                                button_isr_handler,
