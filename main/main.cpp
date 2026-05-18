@@ -80,6 +80,13 @@ static int64_t g_eth_alarms_dirty_until_us = 0;
 static bool g_clear_alarms_on_next_ca = false;
 
 
+#define DEFAULT_BRIGHTNESS_LEVEL  5
+#define DEFAULT_CLOCK_FORMAT      FORMAT_12H
+#define DEFAULT_DISPLAY_MODE      MODE_ROTATION
+
+static bool g_eth_factory_reset_pending = false;
+
+
 
 
 // ================================= ALARM STORAGE =====================================================
@@ -351,6 +358,62 @@ void display_update_task(void* pvParameters)
 		clock_menu_check_timeout();
 		
 		
+		
+		bool factory_reset_pending_copy = false;
+
+		portENTER_CRITICAL(&g_data_mux);
+
+		if (g_eth_factory_reset_pending) {
+		    factory_reset_pending_copy = true;
+		    g_eth_factory_reset_pending = false;
+		}
+
+		portEXIT_CRITICAL(&g_data_mux);
+
+		if (factory_reset_pending_copy) {
+		    ESP_LOGW(TAG, "Applying factory reset from Ethernet");
+
+		    portENTER_CRITICAL(&g_data_mux);
+
+		    memset(g_eth_alarms, 0, sizeof(g_eth_alarms));
+
+		    brightness_level = DEFAULT_BRIGHTNESS_LEVEL;
+		    temporal_brightness = DEFAULT_BRIGHTNESS_LEVEL;
+		    clock_format = DEFAULT_CLOCK_FORMAT;
+		    display_mode = DEFAULT_DISPLAY_MODE;
+
+		    g_eth_alarms_dirty = false;
+		    g_eth_alarms_dirty_until_us = 0;
+		    g_clear_alarms_on_next_ca = false;
+
+		    g_eth_brightness_pending = false;
+		    g_eth_format_pending = false;
+		    g_eth_time_pending = false;   // remove if not used
+
+		    portEXIT_CRITICAL(&g_data_mux);
+
+		    driver->set_brightness(
+		        brightness_level_to_hub75(DEFAULT_BRIGHTNESS_LEVEL)
+		    );
+
+		    clock_settings_save_brightness(DEFAULT_BRIGHTNESS_LEVEL);
+		    clock_settings_save_format((uint8_t)DEFAULT_CLOCK_FORMAT);
+		    clock_settings_save_mode((uint8_t)DEFAULT_DISPLAY_MODE);
+
+		    esp_err_t alarm_save_ret = ethernet_alarms_save();
+
+		    if (alarm_save_ret != ESP_OK) {
+		        ESP_LOGE(TAG,
+		                 "Failed to save cleared alarms after factory reset: %s",
+		                 esp_err_to_name(alarm_save_ret));
+		    }
+
+		    ESP_LOGW(TAG, "Factory reset from Ethernet applied");
+
+		    show_temp_message("RESET", 1000);
+		}
+		
+
 		bool save_alarms_now = false;
 
 		portENTER_CRITICAL(&g_data_mux);
@@ -1652,8 +1715,7 @@ static int ethernet_rx_callback(const uint8_t *p,
 	 * RT command:
 	 * /TA <ID> RT <Reset_ID> \
 	 *
-	 * Reset_ID:
-	 * 0x00 = Reset All
+	 * reset_id = 0x00 -> reset device settings/defaults
 	 *
 	 * ACK:
 	 * /ta <ID> rt \
@@ -1684,14 +1746,17 @@ static int ethernet_rx_callback(const uint8_t *p,
 	        return -1;
 	    }
 
-	    /*
-	     * For now, only ACK the reset command.
-	     * Do not erase alarms/settings yet unless you want the software reset
-	     * button to clear your ESP32 NVS/config.
-	     */
-	    ESP_LOGW(TAG, "RT Reset All received, ACK only for now");
+	    portENTER_CRITICAL(&g_data_mux);
+	    g_eth_factory_reset_pending = true;
+	    portEXIT_CRITICAL(&g_data_mux);
 
-	    return 0;   // generic ACK: /ta <ID> rt 
+	    ESP_LOGW(TAG, "RT Reset All received, factory reset pending");
+
+	    /*
+	     * Generic ACK will be sent:
+	     * /ta <ID> rt \
+	     */
+	    return 0;
 	}
 	
 
