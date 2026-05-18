@@ -11,6 +11,10 @@ static const char *TAG = "CLOCK_SETTINGS";
 #define NVS_KEY_MODE       "mode"
 #define NVS_KEY_BRIGHTNESS "brightness"
 
+#define NVS_KEY_ETH_ALARMS "eth_alarms"
+
+
+
 esp_err_t clock_settings_init(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -85,6 +89,123 @@ static uint8_t load_u8_value(const char *key, uint8_t default_value)
 
     return value;
 }
+
+
+
+static esp_err_t save_blob_value(const char *key, const void *data, size_t size)
+{
+    if (data == NULL || size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed for blob '%s': %s",
+                 key,
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = nvs_set_blob(handle, key, data, size);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Saved blob %s, size=%u",
+                 key,
+                 (unsigned)size);
+    } else {
+        ESP_LOGE(TAG, "Save blob failed for key '%s': %s",
+                 key,
+                 esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+static esp_err_t load_blob_value(const char *key, void *data, size_t expected_size)
+{
+    if (data == NULL || expected_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle;
+
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No NVS namespace for blob '%s': %s",
+                 key,
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    size_t size = expected_size;
+
+    ret = nvs_get_blob(handle, key, data, &size);
+
+    nvs_close(handle);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "Blob '%s' not found", key);
+        return ret;
+    }
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Load blob failed for key '%s': %s",
+                 key,
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    if (size != expected_size) {
+        ESP_LOGW(TAG,
+                 "Blob '%s' size mismatch: got=%u expected=%u",
+                 key,
+                 (unsigned)size,
+                 (unsigned)expected_size);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    ESP_LOGI(TAG, "Loaded blob %s, size=%u",
+             key,
+             (unsigned)size);
+
+    return ESP_OK;
+}
+
+
+
+
+
+
+esp_err_t clock_settings_save_ethernet_alarms(const void *alarms, size_t size)
+{
+    return save_blob_value(NVS_KEY_ETH_ALARMS, alarms, size);
+}
+
+esp_err_t clock_settings_load_ethernet_alarms(void *alarms, size_t size)
+{
+    return load_blob_value(NVS_KEY_ETH_ALARMS, alarms, size);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void clock_settings_save_format(uint8_t format)
 {

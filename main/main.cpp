@@ -16,6 +16,8 @@
 #include "clock_menu.h"
 #include "clock_ethernet.h"
 
+#include "nvs.h"
+
 #define DS18B20_GPIO GPIO_NUM_39
 #define PIN_MENU GPIO_NUM_40
 #define PIN_UP   GPIO_NUM_41
@@ -59,14 +61,46 @@ static int temporal_brightness = 5;     // temporary menu value while editing
 
 // =============================== ETHERNET DATA ===============================
 
+static int g_eth_brightness_level = 5;
 static bool g_eth_brightness_pending = false;
-static uint8_t g_eth_brightness_raw = 0;
 
 static bool g_eth_format_pending = false;
 static hour_format_t g_eth_format = FORMAT_12H;
 
+static bool g_eth_time_pending = false;
+static ds3231_time_t g_eth_time = {};
 
-// =============================================================================================
+
+static bool g_eth_alarms_dirty = false;
+static int64_t g_eth_alarms_dirty_until_us = 0;
+
+
+
+
+static bool g_clear_alarms_on_next_ca = false;
+
+
+
+
+// ================================= ALARM STORAGE =====================================================
+
+typedef struct {
+    bool configured;
+    uint8_t alarm_id;
+    uint8_t time_hh;
+    uint8_t time_mm;
+    uint8_t frequency;
+    uint8_t duration_effect;
+} ethernet_alarm_t;
+
+#define MAX_ETH_ALARMS 60
+
+static ethernet_alarm_t g_eth_alarms[MAX_ETH_ALARMS] = {};
+
+static_assert(sizeof(ethernet_alarm_t) == 6,
+              "ethernet_alarm_t size changed; NVS alarm blob compatibility affected");
+
+// ===========================================================================================================================
 
 
 static uint8_t brightness_level_to_hub75(int level)
@@ -263,6 +297,37 @@ static void reset_mode_sequences(void)
 }
 
 
+
+
+static esp_err_t ethernet_alarms_save(void)
+{
+    ethernet_alarm_t alarms_copy[MAX_ETH_ALARMS];
+
+    portENTER_CRITICAL(&g_data_mux);
+    memcpy(alarms_copy, g_eth_alarms, sizeof(alarms_copy));
+    portEXIT_CRITICAL(&g_data_mux);
+
+    esp_err_t ret = clock_settings_save_ethernet_alarms(
+        alarms_copy,
+        sizeof(alarms_copy)
+    );
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save alarms: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "Ethernet alarms saved");
+
+    return ESP_OK;
+}
+
+
+
+
+
+
+
 // =============================== DISPLAY TASK ===============================
 
 void display_update_task(void* pvParameters)
@@ -283,10 +348,35 @@ void display_update_task(void* pvParameters)
 	bool logo_screen_active_copy;
 
     while (true) {
-		clock_menu_check_timeout();	
+		clock_menu_check_timeout();
+		
+		
+		bool save_alarms_now = false;
+
+		portENTER_CRITICAL(&g_data_mux);
+
+		if (g_eth_alarms_dirty &&
+		    esp_timer_get_time() >= g_eth_alarms_dirty_until_us) {
+		    g_eth_alarms_dirty = false;
+		    save_alarms_now = true;
+		}
+
+		portEXIT_CRITICAL(&g_data_mux);
+
+		if (save_alarms_now) {
+		    esp_err_t ret = ethernet_alarms_save();
+
+		    if (ret == ESP_OK) {
+		        ESP_LOGI(TAG, "Ethernet alarms saved after batch update");
+		    } else {
+		        ESP_LOGE(TAG,
+		                 "Failed to save Ethernet alarms after batch update: %s",
+		                 esp_err_to_name(ret));
+		    }
+		}	
 		
 		bool eth_brightness_pending_copy = false;
-		uint8_t eth_brightness_raw_copy = 0;
+		int eth_brightness_level_copy = 5;
 
 		bool eth_format_pending_copy = false;
 		hour_format_t eth_format_copy = FORMAT_12H;
@@ -295,7 +385,7 @@ void display_update_task(void* pvParameters)
 
 		if (g_eth_brightness_pending) {
 		    eth_brightness_pending_copy = true;
-		    eth_brightness_raw_copy = g_eth_brightness_raw;
+		    eth_brightness_level_copy = g_eth_brightness_level;
 		    g_eth_brightness_pending = false;
 		}
 
@@ -308,36 +398,22 @@ void display_update_task(void* pvParameters)
 		portEXIT_CRITICAL(&g_data_mux);
 
 		if (eth_brightness_pending_copy) {
-		    /*
-		     * Apply raw 1-255 brightness from Ethernet directly to HUB75.
-		     */
-		    driver->set_brightness(eth_brightness_raw_copy);
+		    uint8_t hub75_brightness =
+		        brightness_level_to_hub75(eth_brightness_level_copy);
 
-		    /*
-		     * Convert 1-255 to your local menu scale 1-10.
-		     * Rounded upward enough so very low brightness does not become 0.
-		     */
-		    int new_level = ((int)eth_brightness_raw_copy * 10 + 254) / 255;
-
-		    if (new_level < 1) {
-		        new_level = 1;
-		    }
-
-		    if (new_level > 10) {
-		        new_level = 10;
-		    }
+		    driver->set_brightness(hub75_brightness);
 
 		    portENTER_CRITICAL(&g_data_mux);
-		    brightness_level = new_level;
-		    temporal_brightness = new_level;
+		    brightness_level = eth_brightness_level_copy;
+		    temporal_brightness = eth_brightness_level_copy;
 		    portEXIT_CRITICAL(&g_data_mux);
 
-		    clock_settings_save_brightness(new_level);
+		    clock_settings_save_brightness(eth_brightness_level_copy);
 
 		    ESP_LOGI(TAG,
-		             "Brightness applied from Ethernet: raw=%u level=%d",
-		             eth_brightness_raw_copy,
-		             new_level);
+		             "Brightness applied from Ethernet: level=%d hub75=%u",
+		             eth_brightness_level_copy,
+		             hub75_brightness);
 		}
 
 		if (eth_format_pending_copy) {
@@ -568,6 +644,47 @@ void rtc_task(void* pvParameters)
     ds3231_dev_t* rtc = (ds3231_dev_t*)pvParameters;
 
     while (true) {
+		
+		
+		bool eth_time_pending_copy = false;
+		ds3231_time_t eth_time_copy = {};
+
+		portENTER_CRITICAL(&g_data_mux);
+
+		if (g_eth_time_pending) {
+		    eth_time_pending_copy = true;
+		    eth_time_copy = g_eth_time;
+		    g_eth_time_pending = false;
+		}
+
+		portEXIT_CRITICAL(&g_data_mux);
+
+		if (eth_time_pending_copy) {
+		    esp_err_t set_ret = ds3231_set_time(rtc, &eth_time_copy);
+
+		    if (set_ret == ESP_OK) {
+		        portENTER_CRITICAL(&g_data_mux);
+		        g_now = eth_time_copy;
+		        g_rtc_valid = true;
+		        portEXIT_CRITICAL(&g_data_mux);
+
+		        ESP_LOGI(TAG,
+		                 "RTC updated from Ethernet: %04d-%02d-%02d %02d:%02d:%02d DOW=%d",
+		                 eth_time_copy.year,
+		                 eth_time_copy.month,
+		                 eth_time_copy.day,
+		                 eth_time_copy.hour,
+		                 eth_time_copy.minute,
+		                 eth_time_copy.second,
+		                 eth_time_copy.day_of_week);
+		    } else {
+		        ESP_LOGE(TAG,
+		                 "Failed to update RTC from Ethernet: %s",
+		                 esp_err_to_name(set_ret));
+		    }
+		}
+		
+		
         ds3231_time_t now;
 
         if (ds3231_get_time(rtc, &now) == ESP_OK) {
@@ -969,10 +1086,96 @@ static void check_or_set_default_rtc(ds3231_dev_t *rtc)
     }
 }
 
-static void ethernet_rx_callback(const char *data, int len)
+static uint8_t bcd_to_dec(uint8_t bcd)
 {
-    const uint8_t *p = (const uint8_t *)data;
+    return ((bcd >> 4) * 10) + (bcd & 0x0F);
+}
 
+static bool bcd_is_valid(uint8_t bcd)
+{
+    return ((bcd & 0x0F) <= 9) && (((bcd >> 4) & 0x0F) <= 9);
+}
+
+
+
+static int ethernet_intensity_to_level(uint8_t intensity)
+{
+    /*
+     * Ethernet software sends intensity 0-255.
+     * Local clock menu uses brightness level 1-10.
+     */
+
+    if (intensity < 1) {
+        intensity = 1;
+    }
+
+    int level = ((int)intensity * 10 + 254) / 255;
+
+    if (level < 1) {
+        level = 1;
+    }
+
+    if (level > 10) {
+        level = 10;
+    }
+
+    return level;
+}
+
+
+
+static uint8_t brightness_level_to_protocol_intensity(int level)
+{
+    if (level < 1) {
+        level = 1;
+    }
+
+    if (level > 10) {
+        level = 10;
+    }
+
+    return (uint8_t)((level * 255) / 10);
+}
+
+
+
+static esp_err_t ethernet_alarms_load(void)
+{
+    ethernet_alarm_t alarms_copy[MAX_ETH_ALARMS] = {};
+
+    esp_err_t ret = clock_settings_load_ethernet_alarms(
+        alarms_copy,
+        sizeof(alarms_copy)
+    );
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND ||
+        ret == ESP_ERR_INVALID_SIZE) {
+        ESP_LOGW(TAG, "No valid saved alarms, using defaults");
+        return ESP_OK;
+    }
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load alarms: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    portENTER_CRITICAL(&g_data_mux);
+    memcpy(g_eth_alarms, alarms_copy, sizeof(g_eth_alarms));
+    portEXIT_CRITICAL(&g_data_mux);
+
+    ESP_LOGI(TAG, "Ethernet alarms loaded");
+
+    return ESP_OK;
+}
+
+
+
+
+static int ethernet_rx_callback(const uint8_t *p,
+                                int len,
+                                uint8_t *tx,
+                                int tx_max)
+{
     ESP_LOGI(TAG, "Command from Ethernet received: %d bytes", len);
 
     /*
@@ -983,12 +1186,23 @@ static void ethernet_rx_callback(const char *data, int len)
         p[1] == 0x00 &&
         p[2] == 0x00) {
         ESP_LOGI(TAG, "Ethernet keep-alive / poll received");
-        return;
+        return -1;
     }
 
     /*
      * CT command:
      * /TA <ID> CT <Formato2412> <Intensidad_Luminosa> \
+     *
+	 * Formato2412 observed from Zeit software:
+	 * 0 = 12H
+	 * 1 = 24H
+	 *
+	 * Note:
+	 * This is opposite to what the document appears to say,
+	 * but this mapping matches the actual PC software behavior.
+     *
+     * Intensidad_Luminosa:
+     * 0-255 from software.
      */
     if (len == 9 &&
         p[0] == '/' &&
@@ -1009,26 +1223,32 @@ static void ethernet_rx_callback(const char *data, int len)
                  intensity);
 
         /*
-         * Optional: accept only board ID 0 for now.
+         * Accept only board ID 0 for now.
          */
         if (board_id != 0x00) {
             ESP_LOGW(TAG, "Ignoring CT command for different board ID: %u", board_id);
-            return;
+            return -1;
         }
 
-        hour_format_t new_format = (format_2412 == 0) ? FORMAT_12H : FORMAT_24H;
+		if (format_2412 > 1) {
+		    ESP_LOGW(TAG, "Invalid CT format value: %u", format_2412);
+		    return -1;
+		}
 
-        /*
-         * Avoid full-off brightness unless you really want the panel invisible.
-         * The protocol says 0-255, but your software seems to send min=1.
-         */
-        if (intensity < 1) {
-            intensity = 1;
-        }
+		hour_format_t new_format =
+		    (format_2412 == 0) ? FORMAT_12H : FORMAT_24H;
+
+        int new_brightness_level =
+            ethernet_intensity_to_level(intensity);
+
+        ESP_LOGI(TAG,
+                 "Ethernet intensity %u converted to brightness level %d",
+                 intensity,
+                 new_brightness_level);
 
         portENTER_CRITICAL(&g_data_mux);
 
-        g_eth_brightness_raw = intensity;
+        g_eth_brightness_level = new_brightness_level;
         g_eth_brightness_pending = true;
 
         g_eth_format = new_format;
@@ -1036,10 +1256,447 @@ static void ethernet_rx_callback(const char *data, int len)
 
         portEXIT_CRITICAL(&g_data_mux);
 
-        return;
+        return 0;
     }
+	
+	/*
+	 * ES command:
+	 * /TA <ID> ES \
+	 *
+	 * Estado del Sistema / Is Online.
+	 * ACK is generated by clock_ethernet.cpp:
+	 * /ta <ID> es \
+	 */
+	 if (len == 7 &&
+	     p[0] == '/' &&
+	     p[1] == 'T' &&
+	     p[2] == 'A' &&
+	     p[4] == 'E' &&
+	     p[5] == 'S' &&
+	     p[6] == '\\') {
 
-    ESP_LOGW(TAG, "Unknown Ethernet command");
+	     uint8_t board_id = p[3];
+
+	     ESP_LOGI(TAG, "ES online/status command received: id=%u", board_id);
+
+	     if (board_id != 0x00) {
+	         ESP_LOGW(TAG, "Ignoring ES command for different board ID: %u", board_id);
+	         return -1;
+	     }
+
+	     portENTER_CRITICAL(&g_data_mux);
+	     g_clear_alarms_on_next_ca = true;
+	     portEXIT_CRITICAL(&g_data_mux);
+
+	     ESP_LOGI(TAG, "ES received: next CA will start full alarm replacement");
+
+	     return 0;
+	 }
+	
+	/*
+	 * UC command:
+	 * /TA <ID> UC <ss><mm><hh><DoW><dd><MM><yy> \
+	 *
+	 * Time bytes are BCD according to the protocol.
+	 */
+	if (len == 14 &&
+	    p[0] == '/' &&
+	    p[1] == 'T' &&
+	    p[2] == 'A' &&
+	    p[4] == 'U' &&
+	    p[5] == 'C' &&
+	    p[13] == '\\') {
+
+	    uint8_t board_id = p[3];
+
+	    if (board_id != 0x00) {
+	        ESP_LOGW(TAG, "Ignoring UC command for different board ID: %u", board_id);
+	        return -1;
+	    }
+
+	    for (int i = 6; i <= 12; i++) {
+	        if (!bcd_is_valid(p[i])) {
+	            ESP_LOGW(TAG, "Invalid BCD byte in UC at index %d: 0x%02X", i, p[i]);
+	            return -1;
+	        }
+	    }
+
+	    ds3231_time_t new_time = {};
+
+		new_time.second = bcd_to_dec(p[6]);
+		new_time.minute = bcd_to_dec(p[7]);
+		new_time.hour   = bcd_to_dec(p[8]);
+
+		uint8_t received_dow = bcd_to_dec(p[9]);
+
+		new_time.day   = bcd_to_dec(p[10]);
+		new_time.month = bcd_to_dec(p[11]);
+		new_time.year  = 2000 + bcd_to_dec(p[12]);
+
+		/*
+		 * Do not trust Ethernet DoW because the PC software may use
+		 * a different convention:
+		 *
+		 * 0 = Sunday, 1 = Monday
+		 * or
+		 * 1 = Sunday, 2 = Monday
+		 *
+		 * Our clock already has a known-good weekday calculator.
+		 */
+		new_time.day_of_week = clock_menu_calculate_weekday(
+		    new_time.day,
+		    new_time.month,
+		    new_time.year
+		);
+
+		ESP_LOGI(TAG,
+		         "UC received DoW=%u, calculated DoW=%d",
+		         received_dow,
+		         new_time.day_of_week);
+
+	    if (!rtc_time_is_valid(&new_time)) {
+	        ESP_LOGW(TAG,
+	                 "Invalid UC time: %04d-%02d-%02d %02d:%02d:%02d DOW=%d",
+	                 new_time.year,
+	                 new_time.month,
+	                 new_time.day,
+	                 new_time.hour,
+	                 new_time.minute,
+	                 new_time.second,
+	                 new_time.day_of_week);
+	        return -1;
+	    }
+
+	    portENTER_CRITICAL(&g_data_mux);
+	    g_eth_time = new_time;
+	    g_eth_time_pending = true;
+	    portEXIT_CRITICAL(&g_data_mux);
+
+	    ESP_LOGI(TAG,
+	             "UC time received: %04d-%02d-%02d %02d:%02d:%02d DOW=%d",
+	             new_time.year,
+	             new_time.month,
+	             new_time.day,
+	             new_time.hour,
+	             new_time.minute,
+	             new_time.second,
+	             new_time.day_of_week);
+
+	    return 0;
+	}
+	
+	/*
+	 * RC command:
+	 * /TA <ID> RC \
+	 *
+	 * Response:
+	 * /ta <ID> rc <IMW><Formato2412><Intensidad><ss><mm><hh><DoW><dd><MM><yy> \
+	 */
+	if (len == 7 &&
+	    p[0] == '/' &&
+	    p[1] == 'T' &&
+	    p[2] == 'A' &&
+	    p[4] == 'R' &&
+	    p[5] == 'C' &&
+	    p[6] == '\\') {
+
+	    uint8_t board_id = p[3];
+
+	    ESP_LOGI(TAG, "RC read config command received: id=%u", board_id);
+
+	    if (board_id != 0x00) {
+	        ESP_LOGW(TAG, "Ignoring RC command for different board ID: %u", board_id);
+	        return -1;
+	    }
+
+	    if (tx == NULL || tx_max < 17) {
+	        ESP_LOGE(TAG, "TX buffer too small for RC response");
+	        return -1;
+	    }
+
+	    ds3231_time_t now_copy;
+	    hour_format_t format_copy;
+	    int brightness_level_copy;
+	    bool rtc_valid_copy;
+
+	    portENTER_CRITICAL(&g_data_mux);
+
+	    now_copy = g_now;
+	    format_copy = clock_format;
+	    brightness_level_copy = brightness_level;
+	    rtc_valid_copy = g_rtc_valid;
+
+	    portEXIT_CRITICAL(&g_data_mux);
+
+	    if (!rtc_valid_copy) {
+	        ESP_LOGW(TAG, "RC requested but RTC is not valid");
+	        return -1;
+	    }
+
+	    uint8_t format_2412 = (format_copy == FORMAT_12H) ? 0 : 1;
+	    uint8_t intensity = brightness_level_to_protocol_intensity(brightness_level_copy);
+
+	    /*
+	     * RC document says time fields are HEX, not BCD.
+	     */
+	    tx[0]  = '/';
+	    tx[1]  = 't';
+	    tx[2]  = 'a';
+	    tx[3]  = board_id;
+	    tx[4]  = 'r';
+	    tx[5]  = 'c';
+
+	    tx[6]  = 0x01; // IMW: IsMemoryWritten. Use 1 = valid/configured.
+	    tx[7]  = format_2412;
+	    tx[8]  = intensity;
+
+	    tx[9]  = (uint8_t)now_copy.second;
+	    tx[10] = (uint8_t)now_copy.minute;
+	    tx[11] = (uint8_t)now_copy.hour;
+
+	    /*
+	     * Use your internal day_of_week value.
+	     * If software shows wrong weekday later, we can map it here.
+	     */
+	    tx[12] = (uint8_t)now_copy.day_of_week;
+
+	    tx[13] = (uint8_t)now_copy.day;
+	    tx[14] = (uint8_t)now_copy.month;
+	    tx[15] = (uint8_t)(now_copy.year % 100);
+
+	    tx[16] = '\\';
+
+	    ESP_LOGI(TAG,
+	             "RC response: format=%u intensity=%u time=%04d-%02d-%02d %02d:%02d:%02d DOW=%d",
+	             format_2412,
+	             intensity,
+	             now_copy.year,
+	             now_copy.month,
+	             now_copy.day,
+	             now_copy.hour,
+	             now_copy.minute,
+	             now_copy.second,
+	             now_copy.day_of_week);
+
+	    return 17;
+	}
+	
+	/*
+	 * CA command:
+	 * /TA <ID> CA <Alarma_ID><Hora_Alarma[2]><Frecuencia><Duracion&Efecto> \
+	 *
+	 * ACK:
+	 * /ta <ID> ca <Alarma_ID> \
+	 */
+	if (len == 12 &&
+	    p[0] == '/' &&
+	    p[1] == 'T' &&
+	    p[2] == 'A' &&
+	    p[4] == 'C' &&
+	    p[5] == 'A' &&
+	    p[11] == '\\') {
+
+	    uint8_t board_id = p[3];
+
+	    if (board_id != 0x00) {
+	        ESP_LOGW(TAG, "Ignoring CA command for different board ID: %u", board_id);
+	        return -1;
+	    }
+
+	    uint8_t alarm_id = p[6];
+	    uint8_t alarm_hh = p[7];
+	    uint8_t alarm_mm = p[8];
+	    uint8_t frequency = p[9];
+	    uint8_t duration_effect = p[10];
+
+	    if (alarm_id < 1 || alarm_id > MAX_ETH_ALARMS) {
+	        ESP_LOGW(TAG, "Invalid CA alarm_id=%u", alarm_id);
+	        return -1;
+	    }
+
+	    if (alarm_hh > 23 || alarm_mm > 59) {
+	        ESP_LOGW(TAG, "Invalid CA alarm time: %02u:%02u", alarm_hh, alarm_mm);
+	        return -1;
+	    }
+
+		bool alarm_enabled = (frequency & 0x80) != 0;
+		bool cleared_alarm_table = false;
+
+		portENTER_CRITICAL(&g_data_mux);
+
+		if (g_clear_alarms_on_next_ca) {
+		    memset(g_eth_alarms, 0, sizeof(g_eth_alarms));
+		    g_clear_alarms_on_next_ca = false;
+		    cleared_alarm_table = true;
+		}
+
+		g_eth_alarms[alarm_id - 1].configured = alarm_enabled;
+		g_eth_alarms[alarm_id - 1].alarm_id = alarm_id;
+		g_eth_alarms[alarm_id - 1].time_hh = alarm_hh;
+		g_eth_alarms[alarm_id - 1].time_mm = alarm_mm;
+		g_eth_alarms[alarm_id - 1].frequency = frequency;
+		g_eth_alarms[alarm_id - 1].duration_effect = duration_effect;
+
+		g_eth_alarms_dirty = true;
+		g_eth_alarms_dirty_until_us = esp_timer_get_time() + 1000000;
+
+		portEXIT_CRITICAL(&g_data_mux);
+
+		if (cleared_alarm_table) {
+		    ESP_LOGW(TAG, "First CA after ES: clearing all 60 alarms first");
+		}
+
+		ESP_LOGI(TAG,
+		         "CA alarm stored: id=%u enabled=%d time=%02u:%02u freq=0x%02X dur_eff=0x%02X",
+		         alarm_id,
+		         alarm_enabled,
+		         alarm_hh,
+		         alarm_mm,
+		         frequency,
+		         duration_effect);
+
+
+	    tx[0] = '/';
+	    tx[1] = 't';
+	    tx[2] = 'a';
+	    tx[3] = board_id;
+	    tx[4] = 'c';
+	    tx[5] = 'a';
+	    tx[6] = alarm_id;
+	    tx[7] = '\\';
+
+	    return 8;
+	}
+	
+	/*
+	 * LA command:
+	 * /TA <ID> LA <Alarma_ID> \
+	 *
+	 * ACK:
+	 * /ta <ID> la <Alarma_ID><HH><MM><Frecuencia><Duracion&Efecto> \
+	 */
+	if (len == 8 &&
+	    p[0] == '/' &&
+	    p[1] == 'T' &&
+	    p[2] == 'A' &&
+	    p[4] == 'L' &&
+	    p[5] == 'A' &&
+	    p[7] == '\\') {
+
+	    uint8_t board_id = p[3];
+
+	    if (board_id != 0x00) {
+	        ESP_LOGW(TAG, "Ignoring LA command for different board ID: %u", board_id);
+	        return -1;
+	    }
+
+	    uint8_t alarm_id = p[6];
+
+	    if (alarm_id < 1 || alarm_id > MAX_ETH_ALARMS) {
+	        ESP_LOGW(TAG, "Invalid LA alarm_id=%u", alarm_id);
+	        return -1;
+	    }
+
+	    ethernet_alarm_t alarm_copy;
+
+	    portENTER_CRITICAL(&g_data_mux);
+	    alarm_copy = g_eth_alarms[alarm_id - 1];
+	    portEXIT_CRITICAL(&g_data_mux);
+
+	    if (!alarm_copy.configured) {
+	        /*
+	         * Default value for unconfigured alarm.
+	         */
+	        alarm_copy.configured = false;
+	        alarm_copy.alarm_id = alarm_id;
+	        alarm_copy.time_hh = 0;
+	        alarm_copy.time_mm = 0;
+	        alarm_copy.frequency = 0x00;
+	        alarm_copy.duration_effect = 0x00;
+	    }
+
+	    ESP_LOGI(TAG,
+	             "LA read alarm: id=%u configured=%d time=%02u:%02u freq=0x%02X dur_eff=0x%02X",
+	             alarm_id,
+	             alarm_copy.configured,
+	             alarm_copy.time_hh,
+	             alarm_copy.time_mm,
+	             alarm_copy.frequency,
+	             alarm_copy.duration_effect);
+
+	    if (tx == NULL || tx_max < 12) {
+	        return -1;
+	    }
+
+	    tx[0] = '/';
+	    tx[1] = 't';
+	    tx[2] = 'a';
+	    tx[3] = board_id;
+	    tx[4] = 'l';
+	    tx[5] = 'a';
+
+	    tx[6]  = alarm_id;
+	    tx[7]  = alarm_copy.time_hh;
+	    tx[8]  = alarm_copy.time_mm;
+	    tx[9]  = alarm_copy.frequency;
+	    tx[10] = alarm_copy.duration_effect;
+
+	    tx[11] = '\\';
+
+	    return 12;
+	}
+	
+	
+	
+	/*
+	 * RT command:
+	 * /TA <ID> RT <Reset_ID> \
+	 *
+	 * Reset_ID:
+	 * 0x00 = Reset All
+	 *
+	 * ACK:
+	 * /ta <ID> rt \
+	 */
+	if (len == 8 &&
+	    p[0] == '/' &&
+	    p[1] == 'T' &&
+	    p[2] == 'A' &&
+	    p[4] == 'R' &&
+	    p[5] == 'T' &&
+	    p[7] == '\\') {
+
+	    uint8_t board_id = p[3];
+	    uint8_t reset_id = p[6];
+
+	    ESP_LOGI(TAG,
+	             "RT reset command received: board_id=%u reset_id=0x%02X",
+	             board_id,
+	             reset_id);
+
+	    if (board_id != 0x00) {
+	        ESP_LOGW(TAG, "Ignoring RT command for different board ID: %u", board_id);
+	        return -1;
+	    }
+
+	    if (reset_id != 0x00) {
+	        ESP_LOGW(TAG, "Unknown RT reset_id=0x%02X", reset_id);
+	        return -1;
+	    }
+
+	    /*
+	     * For now, only ACK the reset command.
+	     * Do not erase alarms/settings yet unless you want the software reset
+	     * button to clear your ESP32 NVS/config.
+	     */
+	    ESP_LOGW(TAG, "RT Reset All received, ACK only for now");
+
+	    return 0;   // generic ACK: /ta <ID> rt 
+	}
+	
+
+	ESP_LOGW(TAG, "Unknown Ethernet command");
+	return -1;
 }
 
 // =============================== APP MAIN ===============================
@@ -1059,6 +1716,12 @@ extern "C" void app_main(void)
     }
 	
 	ESP_ERROR_CHECK(clock_settings_init());
+	
+	
+	
+	ESP_ERROR_CHECK(ethernet_alarms_load());
+	
+	
 
 	uint8_t saved_format = clock_settings_load_format((uint8_t)FORMAT_12H);
 	if (saved_format > FORMAT_24H) {

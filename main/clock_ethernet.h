@@ -6,7 +6,12 @@
 extern "C" {
 #endif
 
-typedef void (*clock_ethernet_rx_callback_t)(const char *data, int len);
+typedef int (*clock_ethernet_rx_callback_t)(
+    const uint8_t *rx,
+    int rx_len,
+    uint8_t *tx,
+    int tx_max
+);
 
 /*
  * Initialize W5500 Ethernet using static IP.

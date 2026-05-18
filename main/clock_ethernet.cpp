@@ -183,6 +183,8 @@ static bool send_protocol_ack(int client_sock, const uint8_t *rx, int len)
 
 // ================= TCP SERVER TASK =================
 
+// ================= TCP SERVER TASK =================
+
 static void tcp_server_task(void *pvParameters)
 {
     char rx_buffer[128];
@@ -243,13 +245,15 @@ static void tcp_server_task(void *pvParameters)
                  inet_ntoa(client_addr.sin_addr),
                  ntohs(client_addr.sin_port));
 
-        const char *welcome = "ESP32-S3 TCP server ready\r\n";
-        send(client_sock, welcome, strlen(welcome), 0);
+        /*
+         * Do not send welcome text to the Zeit software.
+         * It expects binary protocol only.
+         */
 
         while (true) {
             int len = recv(client_sock,
                            rx_buffer,
-                           sizeof(rx_buffer) - 1,
+                           sizeof(rx_buffer),
                            0);
 
             if (len < 0) {
@@ -262,24 +266,30 @@ static void tcp_server_task(void *pvParameters)
                 break;
             }
 
-			
-				ESP_LOGI(TAG, "TCP RX %d bytes", len);
-				log_tcp_packet((const uint8_t *)rx_buffer, len);
-	
-				if (s_rx_callback != NULL) {
-				    s_rx_callback(rx_buffer, len);
-				}
+            ESP_LOGI(TAG, "TCP RX %d bytes", len);
+            log_tcp_packet((const uint8_t *)rx_buffer, len);
 
-				send_protocol_ack(client_sock, (const uint8_t *)rx_buffer, len);			
-				
-				/*
-				 * Important:
-				 * Disable ACK while decoding the existing software protocol.
-				 * Some software expects a specific binary response.
-				 */
-				// const char *ack = "OK\r\n";
-				// send(client_sock, ack, strlen(ack), 0);
-		
+            uint8_t tx_buffer[64];
+            int tx_len = 0;
+
+            if (s_rx_callback != NULL) {
+                tx_len = s_rx_callback((const uint8_t *)rx_buffer,
+                                       len,
+                                       tx_buffer,
+                                       sizeof(tx_buffer));
+            }
+
+            if (tx_len > 0) {
+                ESP_LOGI(TAG, "Sending custom response: %d bytes", tx_len);
+                log_tcp_packet(tx_buffer, tx_len);
+                send(client_sock, tx_buffer, tx_len, 0);
+            } else if (tx_len == 0) {
+                send_protocol_ack(client_sock,
+                                  (const uint8_t *)rx_buffer,
+                                  len);
+            } else {
+                ESP_LOGI(TAG, "No response sent");
+            }
         }
 
         shutdown(client_sock, 0);
